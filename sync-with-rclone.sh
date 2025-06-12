@@ -4,7 +4,7 @@
 # Author: Chao Du
 # Version: 2.1
 # Created: 2024-02-11
-# Repository: https://github.com/snail123815/thetoolbox/blob/main/shell_tools/rclone.sh
+# Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
 # Define the project-specific variables
 readonly REMOTE_NAME="rd" # Name of the remote drive (already defined in rclone)
