@@ -2,29 +2,29 @@
 #
 # rclone.sh - Safe bidirectional sync between local and remote directories
 # Author: Chao Du
-# Version: 2.1
+# Version: 2.2 (2025-06-22)
 # Created: 2024-02-11
 # Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
-# Define the project-specific variables
-readonly REMOTE_NAME="rd" # Name of the remote drive (already defined in rclone)
-readonly REMOTE_PATH="__test"   # Path within the remote drive
-readonly OPERATION="copy"     # Sync or copy operation for rclone
-exclude=(
-    # Array of patterns to exclude from syncing, can be written in multiple lines
-)
+# Load project-specific variables from config file
+CONFIG_FILE="$(dirname "$0")/sync-with-rclone.config"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: Config file '$CONFIG_FILE' not found. Please copy a template from"
+    echo "       repository and modify it to set your parameters."
+    exit 1
+fi
+# shellcheck source=sync-with-rclone.config
+. "$CONFIG_FILE"
 
-# Allow push and pull control
-readonly ALLOW_PULL=true        # Set to 'true' to allow pulling, 'false' to disable pulling
-readonly ALLOW_PUSH=true        # Set to 'true' to allow pushing, 'false' to disable pushing
-readonly RECORD_GIT_COMMIT=true # Set to 'true' to record the latest commit hash in .git directories, false to disable, .git will always be excluded
-
-# ====================== Change and check parameters above ===========================
+# ====== Change and check parameters in sync-with-rclone.config ======================
 # ==================== Do not change anything below this line ========================
 
 readonly LOCAL_PATH="." # Local project path (current directory)
 # Exclude .git and python temporary files
-exclude+=(".git" "**/__pycache__/" "*.pyc" "*.pyo" "*.pyd" "*.swp" "*.swo" "*.swn" "*.bak" "*.tmp")
+exclude+=(
+    "**/.git/" "**/__pycache__/" "*.pyc"
+    "*.pyo" "*.pyd" "*.swp" "*.swo" "*.swn" "*.bak" "*.tmp"
+)
 
 # Store script name as a relative path
 SCRIPT_NAME="$0"
@@ -45,21 +45,21 @@ Description:
 Options:
   -h, --help
       Show this help message and exit.
-  
+  -y
+      Skip confirmation prompts and run non-interactively (no user confirmation needed).
   --include <subdirectory>
       Temporary pull or push only the specified subdirectory. If the subdirectory
       does not exist remotely, the script will prompt you to create it.
-      Only one --include option is allowed.
+      The first --include option sets the remote path; subsequent --include options
+      are passed directly to rclone.
   
   [additional rclone parameters]
       Any extra parameters you want to pass to rclone (e.g., --dry-run, --exclude).
   
 Notes:
-  1. The first --include option sets the remote path; subsequent --include options
-     are passed directly to rclone.
-  2. The options --progress and --links are always included. On "pull," the script adds
+  1. The options --progress and --links are always included. On "pull," the script adds
      "--exclude \$SCRIPT_NAME" to avoid deleting itself.
-  3. Setting ALLOW_PULL=false or ALLOW_PUSH=false disables that specific direction.
+  2. Setting ALLOW_PULL=false or ALLOW_PUSH=false disables that specific direction.
   
 Examples:
   $SCRIPT_NAME pull
@@ -73,6 +73,19 @@ EOF
 if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]; then
     usage
 fi
+
+# Parse -y argument for no confirmation
+NO_CONFIRM=false
+for arg in "$@"; do
+    if [[ "$arg" == "-y" ]]; then
+        NO_CONFIRM=true
+        # Remove -y from EXTRA_PARAMS later
+        break
+    fi
+done
+# Remove -y from arguments before passing to rclone
+set -- "${@//-y/}"
+
 if [[ "$REMOTE_PATH" == "" ]]; then
     echo "Error: Please set the REMOTE_PATH variable in the script."
     usage
@@ -153,8 +166,12 @@ else
         # Separate the checks to avoid parse errors
         if [[ -n "$include_path" ]] && rclone lsjson "$REMOTE_NAME:$REMOTE_PATH" &>/dev/null; then
             echo "Warning: Specified subdirectory '$include_path' does not exist remotely."
-            echo -n "Do you want to create it? (y/n) "
-            read confirm
+            if [[ "$NO_CONFIRM" == true ]]; then
+                confirm="y"
+            else
+                echo -n "Do you want to create it? (y/n) "
+                read confirm
+            fi
             if [[ "$confirm" != "y" ]]; then
                 echo "Aborting operation."
                 exit 1
@@ -170,7 +187,6 @@ else
     fi
 fi
 
-
 # Construct the rclone command
 cmd=("rclone" "$OPERATION")
 rclone_paras=("--progress" "--links" "--use-cookies" "--transfers" "4" "--timeout" "60m")
@@ -179,14 +195,14 @@ rclone_paras=("--progress" "--links" "--use-cookies" "--transfers" "4" "--timeou
 for ((i = 0; i < ${#EXTRA_PARAMS[@]}; i++)); do
     case "${EXTRA_PARAMS[i]}" in
     # Check from back to front to avoid index issues
-        --timeout)
-            rclone_paras=( "${rclone_paras[@]:0:5}" "${rclone_paras[@]:7}" )
-            ((i++)) # Skip the next value as it is the associated value
-            ;;
-        --transfers)
-            rclone_paras=( "${rclone_paras[@]:0:3}" "${rclone_paras[@]:5}" )
-            ((i++))
-            ;;
+    --timeout)
+        rclone_paras=("${rclone_paras[@]:0:5}" "${rclone_paras[@]:7}")
+        ((i++)) # Skip the next value as it is the associated value
+        ;;
+    --transfers)
+        rclone_paras=("${rclone_paras[@]:0:3}" "${rclone_paras[@]:5}")
+        ((i++))
+        ;;
     esac
 done
 
@@ -258,8 +274,12 @@ echo "Final rclone command:"
 printf "%q " "${cmd[@]}"
 echo
 
-echo -n "Confirm? (y/n) "
-read confirm
+if [[ "$NO_CONFIRM" == true ]]; then
+    confirm="y"
+else
+    echo -n "Confirm? (y/n) "
+    read confirm
+fi
 if [[ "$confirm" != "y" ]]; then
     echo "Aborting operation."
     exit 1
