@@ -76,15 +76,16 @@ fi
 
 # Parse -y argument for no confirmation
 NO_CONFIRM=false
+NEW_ARGS=()
 for arg in "$@"; do
     if [[ "$arg" == "-y" ]]; then
         NO_CONFIRM=true
-        # Remove -y from EXTRA_PARAMS later
-        break
+        continue
     fi
+    NEW_ARGS+=("$arg")
+    # skip empty args
 done
-# Remove -y from arguments before passing to rclone
-set -- "${@//-y/}"
+set -- "${NEW_ARGS[@]}"
 
 if [[ "$REMOTE_PATH" == "" ]]; then
     echo "Error: Please set the REMOTE_PATH variable in the script."
