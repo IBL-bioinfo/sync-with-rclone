@@ -212,6 +212,7 @@ if [[ "$SYNC_DIRECTION" == "pull" ]]; then
     src="${REMOTE_NAME}:${remote_path_final}"
     dest="${local_path_final}"
     rclone_paras+=("--exclude" "$(basename -- "$SCRIPT_NAME")")
+    rclone_paras+=("--exclude" "$(basename -- "$CONFIG_FILE")")
 elif [[ "$SYNC_DIRECTION" == "push" ]]; then
     echo "Push from ${local_path_final} to ${REMOTE_NAME}:${remote_path_final}."
     src="${local_path_final}"
