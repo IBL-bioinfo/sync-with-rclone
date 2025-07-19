@@ -1,8 +1,20 @@
 #!/bin/bash
 #
-# rclone.sh - Safe bidirectional sync between local and remote directories
+# sync-with-rclone.sh
+#   One command sync/copy between local and remote directories,
+#   using rclone. Made for simplicity most and also for efficiency by excluding some files.
+#     Meaning:
+#       1. Built-in ignore list for common "no need to backup" files
+#       2. Only record git commit hash for git repositories, without syncing .git directories
+#       3. Supports both pull and push operations
+#       4. Configure once, use forever
+#     Will **not** implement for a reason:
+#       1. Create remote subdirectory if it does not exist. User should have a clear idea of what they want to sync.
+#       2. Let user choose to include .git directories or not. Git repositories are usually tracked by itself, if not,
+#          this script will prompt user to sync them to a proper location. Syncing the small files in .git directories
+#          will be a heavy burden for cloud servers using WebDAV.
 # Author: Chao Du
-# Version: 2.2 (2025-06-22)
+# Version: 2.3 (2025-07-19)
 # Created: 2024-02-11
 # Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
@@ -16,14 +28,10 @@ fi
 # shellcheck source=sync-with-rclone.config
 . "$CONFIG_FILE"
 
-# ====== Change and check parameters in sync-with-rclone.config ======================
-# ==================== Do not change anything below this line ========================
-
 readonly LOCAL_PATH="." # Local project path (current directory)
-# Exclude .git and python temporary files
+# Exclude .git and python temporary files. This is a fixed list, I do not recommend to change.
 exclude+=(
-    "**/.git/" "**/__pycache__/" "*.pyc"
-    "*.pyo" "*.pyd" "*.swp" "*.swo" "*.swn" "*.bak" "*.tmp"
+    "**/.git/" "**/__pycache__/"
 )
 
 # Store script name as a relative path
@@ -35,12 +43,25 @@ usage() {
     $SCRIPT_NAME pull|push [--include <subdirectory>] [additional rclone parameters]"
     cat <<EOF
 
+sync-with-rclone.sh
+Version: 2.3 (2025-07-19)
+Author: Chao Du
+Repository: https://github.com/IBL-bioinfo/sync-with-rclone
+
 Description:
-  This script syncs files between a local directory and a remote location using rclone.
+  One command sync/copy between local and remote directories using rclone.
+  Made for simplicity and efficiency (reduces unnecessary transfer of useless small files).
+  
+  Features:
+  - Built-in ignore list for common "no need to backup" files
+  - Records git commit hash for git repositories, without syncing .git directories
+  - Supports both pull and push operations
+  - Configure once, use forever
+  
   Choose "pull" to download from the remote to the local path, or "push" to upload
   from the local path to the remote. If git repositories are found in the local path,
-  the latest commit hash is recorded in a git_current_commit.txt file in each repository.
-  But the .git directories are excluded from syncing by default.
+  the latest commit hash is recorded in a git repository info file for each repository.
+  The .git directories are excluded from syncing by default.
   
 Options:
   -h, --help
@@ -244,8 +265,69 @@ scan_and_record_git_commit() {
             continue
         elif [[ -d "$subdir/.git" ]]; then
             echo "Found git repository $subdir"
-            if git -C "$subdir" rev-parse HEAD >"$subdir/git_current_commit.txt"; then
+            if commit_hash=$(git -C "$subdir" rev-parse HEAD); then
                 found_repos=0 # 0 indicates repos found (true)
+
+                # Get all remotes (could be none, one, or multiple)
+                remote_info=""
+                if remotes=$(git -C "$subdir" remote 2>/dev/null) && [[ -n "$remotes" ]]; then
+                    # Has remotes - get URLs for all of them, one per line
+                    while IFS= read -r remote_name; do
+                        if [[ -n "$remote_name" ]]; then
+                            remote_url=$(git -C "$subdir" config --get "remote.${remote_name}.url" 2>/dev/null)
+                            if [[ -n "$remote_url" ]]; then
+                                if [[ -n "$remote_info" ]]; then
+                                    remote_info="${remote_info}$'\n'${remote_name}: ${remote_url}"
+                                else
+                                    remote_info="${remote_name}: ${remote_url}"
+                                fi
+                            fi
+                        fi
+                    done <<< "$remotes"
+                else
+                    # No remotes
+                    remote_info="No remotes configured, only current status will be backed up."
+                    echo "Warning: No remotes configured for $subdir, only current status will be backed up."
+                    echo "Please use a dedicated remote (GitLab or GitHub etc.) to track changes!"
+                fi
+
+                git_status=$(git -C "$subdir" status --porcelain)
+                git_status_line=""
+                if [[ -n "$git_status" ]]; then
+                    # Clean up git status by removing empty lines and normalizing line endings
+                    git_status_line=$(echo "$git_status" | sed 's/\r$//' | sed '/^$/d')
+                else
+                    git_status_line="Working directory clean"
+                fi
+                # Record git repository information
+                subdir_name=$(basename "$subdir")
+                git_info_file="$(dirname "$subdir")/${subdir_name}_git_repository.txt"
+
+                # Check if the current repository state is already recorded
+                # Normalize line endings in the git info file for comparison (convert CRLF to LF)
+                local normalized_file=""
+                if [[ -f "$git_info_file" ]]; then
+                    normalized_file=$(sed 's/\r$//' "$git_info_file")
+                fi
+
+                local current_entry=$(cat <<EOF
+Commit Hash: $commit_hash
+Remote(s):
+$remote_info
+Git Status:
+$git_status_line
+EOF
+                )
+                if [[ -n "$normalized_file" ]] && echo "$normalized_file" | grep -qF "$current_entry"; then
+                    echo "Repository state for $subdir is already recorded. Skipping update."
+                else
+                    # Write new git repository information by appending
+                    echo "============ git repository information ============" >>"$git_info_file"
+                    echo "Date: $(date)" >>"$git_info_file"
+                    echo -e "$current_entry" >>"$git_info_file"
+
+                    echo "Recorded commit hash for $subdir: $commit_hash"
+                fi
             else
                 echo "Warning: Failed to record commit hash for $subdir"
             fi
@@ -261,11 +343,11 @@ scan_and_record_git_commit() {
     return $found_repos # Return 0 if any repos found, else 1
 }
 
-if [[ "$RECORD_GIT_COMMIT" == true ]]; then
+if [[ "$RECORD_GIT_COMMIT" == true && "$SYNC_DIRECTION" == "push" ]]; then
     echo "Searching git repositories..."
-    scan_and_record_git_commit "$local_path_final"
-    found_repos=$?
-    if [[ $found_repos -eq 1 ]]; then
+    if scan_and_record_git_commit "$local_path_final"; then
+        echo "Git repositories found and recorded."
+    else
         echo "No git repositories found in '$local_path_final'"
     fi
 fi
