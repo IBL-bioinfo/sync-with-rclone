@@ -2,7 +2,7 @@
 #
 # sync-with-rclone.sh
 #   One command sync/copy between local and remote directories,
-#   using rclone. Made for simplicity and efficiency (reduce unnecessary transfer of useless small files).
+#   using rclone. Made for simplicity most and also for efficiency by excluding some files.
 #     Meaning:
 #       1. Built-in ignore list for common "no need to backup" files
 #       2. Only record git commit hash for git repositories, without syncing .git directories
@@ -10,6 +10,9 @@
 #       4. Configure once, use forever
 #     Will **not** implement for a reason:
 #       1. Create remote subdirectory if it does not exist. User should have a clear idea of what they want to sync.
+#       2. Let user choose to include .git directories or not. Git repositories are usually tracked by itself, if not,
+#          this script will prompt user to sync them to a proper location. Syncing the small files in .git directories
+#          will be a heavy burden for cloud servers using WebDAV.
 # Author: Chao Du
 # Version: 2.3 (2025-07-19)
 # Created: 2024-02-11
@@ -264,7 +267,30 @@ scan_and_record_git_commit() {
             echo "Found git repository $subdir"
             if commit_hash=$(git -C "$subdir" rev-parse HEAD); then
                 found_repos=0 # 0 indicates repos found (true)
-                remote_url=$(git -C "$subdir" config --get remote.origin.url)
+                
+                # Get all remotes (could be none, one, or multiple)
+                remote_info=""
+                if remotes=$(git -C "$subdir" remote 2>/dev/null) && [[ -n "$remotes" ]]; then
+                    # Has remotes - get URLs for all of them, one per line
+                    while IFS= read -r remote_name; do
+                        if [[ -n "$remote_name" ]]; then
+                            remote_url=$(git -C "$subdir" config --get "remote.${remote_name}.url" 2>/dev/null)
+                            if [[ -n "$remote_url" ]]; then
+                                if [[ -n "$remote_info" ]]; then
+                                    remote_info="${remote_info}\n${remote_name}: ${remote_url}"
+                                else
+                                    remote_info="${remote_name}: ${remote_url}"
+                                fi
+                            fi
+                        fi
+                    done <<< "$remotes"
+                else
+                    # No remotes
+                    remote_info="No remotes configured, only current status will be backed up."
+                    echo "Warning: No remotes configured for $subdir, only current status will be backed up."
+                    echo "Please use a dedicated remote (GitLab or GitHub etc.) to track changes!"
+                fi
+                
                 git_status=$(git -C "$subdir" status --porcelain)
                 git_status_line=""
                 if [[ -n "$git_status" ]]; then
@@ -309,7 +335,8 @@ scan_and_record_git_commit() {
                     # Write new git repository information by appending
                     echo "============ git repository information ============" >>"$git_info_file"
                     echo "Date: $(date)" >>"$git_info_file"
-                    echo "Remote URL: $remote_url" >>"$git_info_file"
+                    echo "Remote(s):" >>"$git_info_file"
+                    echo -e "$remote_info" >>"$git_info_file"
                     echo "Commit Hash: $commit_hash" >>"$git_info_file"
                     echo "Git Status:" >>"$git_info_file"
                     echo "$git_status_line" >>"$git_info_file"
