@@ -244,8 +244,50 @@ scan_and_record_git_commit() {
             continue
         elif [[ -d "$subdir/.git" ]]; then
             echo "Found git repository $subdir"
-            if git -C "$subdir" rev-parse HEAD >"$subdir/git_current_commit.txt"; then
+            if commit_hash=$(git -C "$subdir" rev-parse HEAD); then
                 found_repos=0 # 0 indicates repos found (true)
+                remote_url=$(git -C "$subdir" config --get remote.origin.url)
+                git_status=$(git -C "$subdir" status --porcelain)
+                git_status_line=""
+                if [[ -n "$git_status" ]]; then
+                    git_status_line="$git_status"
+                else
+                    git_status_line="Working directory clean"
+                fi
+                # Record git repository information
+                subdir_name=$(basename "$subdir")
+                git_info_file="$(dirname "$subdir")/${subdir_name}_git_repository.txt"
+
+                # Check if we need to update the record
+                needs_update=true
+                if [[ -f "$git_info_file" ]]; then
+                    # Extract previous commit hash and status from existing file
+                    prev_commit=$(grep "^Commit Hash:" "$git_info_file" 2>/dev/null | cut -d' ' -f3-)
+                    # Check if git status section exists and extract it
+                    if grep -q "^Git Status:" "$git_info_file" 2>/dev/null; then
+                        # Get the line after "Git Status:" - this handles both cases
+                        prev_status=$(sed -n '/^Git Status:/{n;p;}' "$git_info_file" 2>/dev/null)
+                    else
+                        prev_status=""
+                    fi
+
+                    # Compare current status with previous
+                    if [[ "$prev_commit" == "$commit_hash" && "$prev_status" == "$git_status_line" ]]; then
+                        needs_update=false
+                        echo "Git repository info unchanged for $subdir, skipping update"
+                    fi
+                fi
+
+                if [[ "$needs_update" == true ]]; then
+                    # Write new git repository information by appending
+                    echo "============ git repository information ============" >>"$git_info_file"
+                    echo "Date: $(date)" >>"$git_info_file"
+                    echo "Remote URL: $remote_url" >>"$git_info_file"
+                    echo "Commit Hash: $commit_hash" >>"$git_info_file"
+                    echo "Git Status:" >>"$git_info_file"
+                    echo "$git_status_line" >>"$git_info_file"
+                    echo "Recorded commit hash for $subdir: $commit_hash"
+                fi
             else
                 echo "Warning: Failed to record commit hash for $subdir"
             fi
@@ -261,11 +303,13 @@ scan_and_record_git_commit() {
     return $found_repos # Return 0 if any repos found, else 1
 }
 
-if [[ "$RECORD_GIT_COMMIT" == true ]]; then
+if [[ "$RECORD_GIT_COMMIT" == true && "$SYNC_DIRECTION" == "push" ]]; then
     echo "Searching git repositories..."
     scan_and_record_git_commit "$local_path_final"
     found_repos=$?
-    if [[ $found_repos -eq 1 ]]; then
+    if scan_and_record_git_commit "$local_path_final"; then
+        echo "Git repositories found and recorded."
+    else
         echo "No git repositories found in '$local_path_final'"
     fi
 fi
