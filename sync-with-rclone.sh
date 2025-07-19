@@ -250,7 +250,8 @@ scan_and_record_git_commit() {
                 git_status=$(git -C "$subdir" status --porcelain)
                 git_status_line=""
                 if [[ -n "$git_status" ]]; then
-                    git_status_line="$git_status"
+                    # Clean up git status by removing empty lines and normalizing line endings
+                    git_status_line=$(echo "$git_status" | sed 's/\r$//' | sed '/^$/d')
                 else
                     git_status_line="Working directory clean"
                 fi
@@ -261,14 +262,22 @@ scan_and_record_git_commit() {
                 # Check if we need to update the record
                 needs_update=true
                 if [[ -f "$git_info_file" ]]; then
-                    # Extract previous commit hash and status from existing file
+                    # Extract previous commit hash from existing file
                     prev_commit=$(grep "^Commit Hash:" "$git_info_file" 2>/dev/null | cut -d' ' -f3-)
-                    # Check if git status section exists and extract it
+                    # Extract previous git status (all lines after "Git Status:" until next section or EOF)
+                    prev_status=""
                     if grep -q "^Git Status:" "$git_info_file" 2>/dev/null; then
-                        # Get the line after "Git Status:" - this handles both cases
-                        prev_status=$(sed -n '/^Git Status:/{n;p;}' "$git_info_file" 2>/dev/null)
-                    else
-                        prev_status=""
+                        # Get the last occurrence of "Git Status:" and extract content after it
+                        # Find the line number of the last "Git Status:" occurrence
+                        last_git_status_line=$(grep -n "^Git Status:" "$git_info_file" 2>/dev/null | tail -1 | cut -d: -f1)
+                        if [[ -n "$last_git_status_line" ]]; then
+                            # Get all lines after the last "Git Status:" until next "====" or EOF
+                            prev_status=$(sed -n "${last_git_status_line},/^====/p" "$git_info_file" 2>/dev/null | sed '1d;$d' | sed 's/\r$//' | sed '/^$/d')
+                            # If no "====" line found after the last "Git Status:", get from there to EOF
+                            if [[ -z "$prev_status" ]]; then
+                                prev_status=$(sed -n "${last_git_status_line},\$p" "$git_info_file" 2>/dev/null | sed '1d' | sed 's/\r$//' | sed '/^$/d')
+                            fi
+                        fi
                     fi
 
                     # Compare current status with previous
