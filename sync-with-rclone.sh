@@ -303,61 +303,22 @@ scan_and_record_git_commit() {
                 subdir_name=$(basename "$subdir")
                 git_info_file="$(dirname "$subdir")/${subdir_name}_git_repository.txt"
 
-                # Check if we need to update the record
-                needs_update=true
+                # Check if the current repository state is already recorded
+                # Normalize line endings in the git info file for comparison (convert CRLF to LF)
+                local normalized_file=""
                 if [[ -f "$git_info_file" ]]; then
-                    # Extract previous commit hash from existing file (get the last occurrence)
-                    prev_commit=$(grep "^Commit Hash:" "$git_info_file" 2>/dev/null | tail -1 | cut -d' ' -f3-)
-
-                    # Extract previous remote info (all lines after "Remote(s):" until next section)
-                    prev_remote_info=""
-                    if grep -q "^Remote(s):" "$git_info_file" 2>/dev/null; then
-                        # Get the last occurrence of "Remote(s):" and extract content after it
-                        last_remote_line=$(grep -n "^Remote(s):" "$git_info_file" 2>/dev/null | tail -1 | cut -d: -f1)
-                        if [[ -n "$last_remote_line" ]]; then
-                            # Get all lines after the last "Remote(s):" until next section
-                            prev_remote_info=$(sed -n "${last_remote_line},/^Commit Hash:/p" "$git_info_file" 2>/dev/null | sed '1d;$d' | sed 's/\r$//' | sed '/^$/d')
-                            # If no "Commit Hash:" line found, get from "Remote(s):" to next section or EOF
-                            if [[ -z "$prev_remote_info" ]]; then
-                                prev_remote_info=$(sed -n "${last_remote_line},/^====/p" "$git_info_file" 2>/dev/null | sed '1d;$d' | sed 's/\r$//' | sed '/^$/d')
-                                if [[ -z "$prev_remote_info" ]]; then
-                                    prev_remote_info=$(sed -n "${last_remote_line},\$p" "$git_info_file" 2>/dev/null | sed '1d' | sed 's/\r$//' | sed '/^$/d')
-                                fi
-                            fi
-                        fi
-                    fi
-
-                    # Extract previous git status (all lines after "Git Status:" until next section or EOF)
-                    prev_status=""
-                    if grep -q "^Git Status:" "$git_info_file" 2>/dev/null; then
-                        # Get the last occurrence of "Git Status:" and extract content after it
-                        # Find the line number of the last "Git Status:" occurrence
-                        last_git_status_line=$(grep -n "^Git Status:" "$git_info_file" 2>/dev/null | tail -1 | cut -d: -f1)
-                        if [[ -n "$last_git_status_line" ]]; then
-                            # Get all lines after the last "Git Status:" until next "====" or EOF
-                            prev_status=$(sed -n "${last_git_status_line},/^====/p" "$git_info_file" 2>/dev/null | sed '1d;$d' | sed 's/\r$//' | sed '/^$/d')
-                            # If no "====" line found after the last "Git Status:", get from there to EOF
-                            if [[ -z "$prev_status" ]]; then
-                                prev_status=$(sed -n "${last_git_status_line},\$p" "$git_info_file" 2>/dev/null | sed '1d' | sed 's/\r$//' | sed '/^$/d')
-                            fi
-                        fi
-                    fi
-
-# (No replacement lines; the block is removed entirely.)
-                    #         echo "  Status changed: '$prev_status' -> '$git_status_line'"
-                    #     fi
-                    # fi
+                    normalized_file=$(sed 's/\r$//' "$git_info_file")
                 fi
 
-                if [[ "$needs_update" == true ]]; then
+                local current_entry="Commit Hash: $commit_hash"$'\n'"Remote(s):"$'\n'"$remote_info"$'\n'"Git Status:"$'\n'"$git_status_line"
+                if [[ -n "$normalized_file" ]] && echo "$normalized_file" | grep -qF "$current_entry"; then
+                    echo "Repository state for $subdir is already recorded. Skipping update."
+                else
                     # Write new git repository information by appending
                     echo "============ git repository information ============" >>"$git_info_file"
                     echo "Date: $(date)" >>"$git_info_file"
-                    echo "Remote(s):" >>"$git_info_file"
-                    echo -e "$remote_info" >>"$git_info_file"
-                    echo "Commit Hash: $commit_hash" >>"$git_info_file"
-                    echo "Git Status:" >>"$git_info_file"
-                    echo "$git_status_line" >>"$git_info_file"
+                    echo -e "$current_entry" >>"$git_info_file"
+
                     echo "Recorded commit hash for $subdir: $commit_hash"
                 fi
             else
