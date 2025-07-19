@@ -306,8 +306,8 @@ scan_and_record_git_commit() {
                 # Check if we need to update the record
                 needs_update=true
                 if [[ -f "$git_info_file" ]]; then
-                    # Extract previous commit hash from existing file
-                    prev_commit=$(grep "^Commit Hash:" "$git_info_file" 2>/dev/null | cut -d' ' -f3-)
+                    # Extract previous commit hash from existing file (get the last occurrence)
+                    prev_commit=$(grep "^Commit Hash:" "$git_info_file" 2>/dev/null | tail -1 | cut -d' ' -f3-)
 
                     # Extract previous remote info (all lines after "Remote(s):" until next section)
                     prev_remote_info=""
@@ -344,10 +344,23 @@ scan_and_record_git_commit() {
                     fi
 
                     # Compare current status with previous (commit hash, remote info, and git status)
-                    if [[ "$prev_commit" == "$commit_hash" && "$prev_remote_info" == "$remote_info" && "$prev_status" == "$git_status_line" ]]; then
-                        needs_update=false
-                        echo "Git repository info unchanged for $subdir, skipping update"
-                    fi
+                    # if [[ "$prev_commit" == "$commit_hash" && "$prev_remote_info" == "$remote_info" && "$prev_status" == "$git_status_line" ]]; then
+                    #     needs_update=false
+                    #     echo "Git repository info unchanged for $subdir, skipping update"
+                    # else
+                    #     echo "Git repository info changed for $subdir:"
+                    #     if [[ "$prev_commit" != "$commit_hash" ]]; then
+                    #         echo "  Commit changed: '$prev_commit' -> '$commit_hash'"
+                    #     fi
+                    #     if [[ "$prev_remote_info" != "$remote_info" ]]; then
+                    #         echo "  Remote info changed:"
+                    #         echo "    Previous: '$prev_remote_info'"
+                    #         echo "    Current:  '$remote_info'"
+                    #     fi
+                    #     if [[ "$prev_status" != "$git_status_line" ]]; then
+                    #         echo "  Status changed: '$prev_status' -> '$git_status_line'"
+                    #     fi
+                    # fi
                 fi
 
                 if [[ "$needs_update" == true ]]; then
@@ -378,8 +391,6 @@ scan_and_record_git_commit() {
 
 if [[ "$RECORD_GIT_COMMIT" == true && "$SYNC_DIRECTION" == "push" ]]; then
     echo "Searching git repositories..."
-    scan_and_record_git_commit "$local_path_final"
-    found_repos=$?
     if scan_and_record_git_commit "$local_path_final"; then
         echo "Git repositories found and recorded."
     else
