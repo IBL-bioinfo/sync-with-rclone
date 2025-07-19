@@ -267,7 +267,7 @@ scan_and_record_git_commit() {
             echo "Found git repository $subdir"
             if commit_hash=$(git -C "$subdir" rev-parse HEAD); then
                 found_repos=0 # 0 indicates repos found (true)
-                
+
                 # Get all remotes (could be none, one, or multiple)
                 remote_info=""
                 if remotes=$(git -C "$subdir" remote 2>/dev/null) && [[ -n "$remotes" ]]; then
@@ -290,7 +290,7 @@ scan_and_record_git_commit() {
                     echo "Warning: No remotes configured for $subdir, only current status will be backed up."
                     echo "Please use a dedicated remote (GitLab or GitHub etc.) to track changes!"
                 fi
-                
+
                 git_status=$(git -C "$subdir" status --porcelain)
                 git_status_line=""
                 if [[ -n "$git_status" ]]; then
@@ -308,6 +308,25 @@ scan_and_record_git_commit() {
                 if [[ -f "$git_info_file" ]]; then
                     # Extract previous commit hash from existing file
                     prev_commit=$(grep "^Commit Hash:" "$git_info_file" 2>/dev/null | cut -d' ' -f3-)
+
+                    # Extract previous remote info (all lines after "Remote(s):" until next section)
+                    prev_remote_info=""
+                    if grep -q "^Remote(s):" "$git_info_file" 2>/dev/null; then
+                        # Get the last occurrence of "Remote(s):" and extract content after it
+                        last_remote_line=$(grep -n "^Remote(s):" "$git_info_file" 2>/dev/null | tail -1 | cut -d: -f1)
+                        if [[ -n "$last_remote_line" ]]; then
+                            # Get all lines after the last "Remote(s):" until next section
+                            prev_remote_info=$(sed -n "${last_remote_line},/^Commit Hash:/p" "$git_info_file" 2>/dev/null | sed '1d;$d' | sed 's/\r$//' | sed '/^$/d')
+                            # If no "Commit Hash:" line found, get from "Remote(s):" to next section or EOF
+                            if [[ -z "$prev_remote_info" ]]; then
+                                prev_remote_info=$(sed -n "${last_remote_line},/^====/p" "$git_info_file" 2>/dev/null | sed '1d;$d' | sed 's/\r$//' | sed '/^$/d')
+                                if [[ -z "$prev_remote_info" ]]; then
+                                    prev_remote_info=$(sed -n "${last_remote_line},\$p" "$git_info_file" 2>/dev/null | sed '1d' | sed 's/\r$//' | sed '/^$/d')
+                                fi
+                            fi
+                        fi
+                    fi
+
                     # Extract previous git status (all lines after "Git Status:" until next section or EOF)
                     prev_status=""
                     if grep -q "^Git Status:" "$git_info_file" 2>/dev/null; then
@@ -324,8 +343,8 @@ scan_and_record_git_commit() {
                         fi
                     fi
 
-                    # Compare current status with previous
-                    if [[ "$prev_commit" == "$commit_hash" && "$prev_status" == "$git_status_line" ]]; then
+                    # Compare current status with previous (commit hash, remote info, and git status)
+                    if [[ "$prev_commit" == "$commit_hash" && "$prev_remote_info" == "$remote_info" && "$prev_status" == "$git_status_line" ]]; then
                         needs_update=false
                         echo "Git repository info unchanged for $subdir, skipping update"
                     fi
