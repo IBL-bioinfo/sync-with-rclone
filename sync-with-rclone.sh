@@ -310,7 +310,14 @@ scan_and_record_git_commit() {
                     normalized_file=$(sed 's/\r$//' "$git_info_file")
                 fi
 
-                local current_entry="Commit Hash: $commit_hash"$'\n'"Remote(s):"$'\n'"$remote_info"$'\n'"Git Status:"$'\n'"$git_status_line"
+                local current_entry=$(cat <<EOF
+Commit Hash: $commit_hash
+Remote(s):
+$remote_info
+Git Status:
+$git_status_line
+EOF
+                )
                 if [[ -n "$normalized_file" ]] && echo "$normalized_file" | grep -qF "$current_entry"; then
                     echo "Repository state for $subdir is already recorded. Skipping update."
                 else
