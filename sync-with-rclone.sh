@@ -343,21 +343,7 @@ scan_and_record_git_commit() {
                         fi
                     fi
 
-                    # Compare current status with previous (commit hash, remote info, and git status)
-                    # if [[ "$prev_commit" == "$commit_hash" && "$prev_remote_info" == "$remote_info" && "$prev_status" == "$git_status_line" ]]; then
-                    #     needs_update=false
-                    #     echo "Git repository info unchanged for $subdir, skipping update"
-                    # else
-                    #     echo "Git repository info changed for $subdir:"
-                    #     if [[ "$prev_commit" != "$commit_hash" ]]; then
-                    #         echo "  Commit changed: '$prev_commit' -> '$commit_hash'"
-                    #     fi
-                    #     if [[ "$prev_remote_info" != "$remote_info" ]]; then
-                    #         echo "  Remote info changed:"
-                    #         echo "    Previous: '$prev_remote_info'"
-                    #         echo "    Current:  '$remote_info'"
-                    #     fi
-                    #     if [[ "$prev_status" != "$git_status_line" ]]; then
+# (No replacement lines; the block is removed entirely.)
                     #         echo "  Status changed: '$prev_status' -> '$git_status_line'"
                     #     fi
                     # fi
