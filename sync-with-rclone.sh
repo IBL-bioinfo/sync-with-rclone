@@ -9,7 +9,7 @@
 #       3. Supports both pull and push operations
 #       4. Configure once, use forever
 #     Will **not** implement for a reason:
-#       1. Create remote subdirectory if it does not exist
+#       1. Create remote subdirectory if it does not exist. User should have a clear idea of what they want to sync.
 # Author: Chao Du
 # Version: 2.3 (2025-07-19)
 # Created: 2024-02-11
@@ -25,14 +25,10 @@ fi
 # shellcheck source=sync-with-rclone.config
 . "$CONFIG_FILE"
 
-# ====== Change and check parameters in sync-with-rclone.config ======================
-# ==================== Do not change anything below this line ========================
-
 readonly LOCAL_PATH="." # Local project path (current directory)
-# Exclude .git and python temporary files
+# Exclude .git and python temporary files. This is a fixed list, I do not recommend to change.
 exclude+=(
-    "**/.git/" "**/__pycache__/" "*.pyc"
-    "*.pyo" "*.pyd" "*.swp" "*.swo" "*.swn" "*.bak" "*.tmp"
+    "**/.git/" "**/__pycache__/"
 )
 
 # Store script name as a relative path
