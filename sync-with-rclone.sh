@@ -1,8 +1,17 @@
 #!/bin/bash
 #
-# rclone.sh - Safe bidirectional sync between local and remote directories
+# sync-with-rclone.sh
+#   One command sync/copy between local and remote directories,
+#   using rclone. Made for simplicity and efficiency (reduce unnecessary transfer of useless small files).
+#     Meaning:
+#       1. Built-in ignore list for common "no need to backup" files
+#       2. Only record git commit hash for git repositories, without syncing .git directories
+#       3. Supports both pull and push operations
+#       4. Configure once, use forever
+#     Will **not** implement for a reason:
+#       1. Create remote subdirectory if it does not exist
 # Author: Chao Du
-# Version: 2.2 (2025-06-22)
+# Version: 2.3 (2025-07-19)
 # Created: 2024-02-11
 # Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
@@ -36,11 +45,19 @@ usage() {
     cat <<EOF
 
 Description:
-  This script syncs files between a local directory and a remote location using rclone.
+  One command sync/copy between local and remote directories using rclone.
+  Made for simplicity and efficiency (reduces unnecessary transfer of useless small files).
+  
+  Features:
+  - Built-in ignore list for common "no need to backup" files
+  - Records git commit hash for git repositories, without syncing .git directories
+  - Supports both pull and push operations
+  - Configure once, use forever
+  
   Choose "pull" to download from the remote to the local path, or "push" to upload
   from the local path to the remote. If git repositories are found in the local path,
-  the latest commit hash is recorded in a git_current_commit.txt file in each repository.
-  But the .git directories are excluded from syncing by default.
+  the latest commit hash is recorded in a git repository info file for each repository.
+  The .git directories are excluded from syncing by default.
   
 Options:
   -h, --help
