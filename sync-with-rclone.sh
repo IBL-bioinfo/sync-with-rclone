@@ -277,7 +277,7 @@ scan_and_record_git_commit() {
                             remote_url=$(git -C "$subdir" config --get "remote.${remote_name}.url" 2>/dev/null)
                             if [[ -n "$remote_url" ]]; then
                                 if [[ -n "$remote_info" ]]; then
-                                    remote_info="${remote_info}\n${remote_name}: ${remote_url}"
+                                    remote_info="${remote_info}$'\n'${remote_name}: ${remote_url}"
                                 else
                                     remote_info="${remote_name}: ${remote_url}"
                                 fi
