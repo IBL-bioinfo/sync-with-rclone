@@ -44,6 +44,11 @@ usage() {
     $SCRIPT_NAME pull|push [--include <subdirectory>] [additional rclone parameters]"
     cat <<EOF
 
+sync-with-rclone.sh
+Version: 2.3 (2025-07-19)
+Author: Chao Du
+Repository: https://github.com/IBL-bioinfo/sync-with-rclone
+
 Description:
   One command sync/copy between local and remote directories using rclone.
   Made for simplicity and efficiency (reduces unnecessary transfer of useless small files).
