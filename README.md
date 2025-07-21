@@ -12,6 +12,44 @@ It is a script that serves as a base of scripts for a target folder, for syncing
 3. `chmod u+x <script>`
 4. Run the script with `pull` or `push`
 
+## If git repository is encountered
+
+(when this function is not disabled by the config file)
+
+Will create a file aside with the repo:
+
+```sh
+% tree
+.
+├── your-geneious-repo
+│   ├── file-in-repo
+│   ├── does-not-include-.git-directory
+│   └── rest-of-your-repo
+├── your-geneious-repo_git_repository.txt
+└── your-other-files
+
+% cat your-geneious-repo_git_repository.txt
+============ git repository information ============
+Date: Sun Jul 19 12:16:26 CEST 2025
+Commit Hash: 36f8odkvidufb518b5c3b727aa2f709d37372828
+Remote(s):
+origin: git@github.com:you/your-geneious-repo.git
+Git Status:
+Working directory clean
+============ git repository information ============
+Date: Sun Jul 20 14:09:18 CEST 2025
+Commit Hash: 5dg3bdhcidufb518b5c3b727aa2f709d301us64y
+Remote(s):
+origin: git@github.com:you/your-geneious-repo.git
+backup: git@gitlab.com:your-institute/your-geneious-repo.git
+Git Status:
+ M file-modified.txt
+A  file-added.txt
+?? file-untracted.txt
+ D file-deleted.txt
+```
+
+
 ---
 
 **Version 2.2 changes:**
@@ -22,7 +60,7 @@ It is a script that serves as a base of scripts for a target folder, for syncing
 - The `-y` option is now supported to skip confirmation prompts.
 
 **Version 2.3 changes:**
-- Git repository is processed in a better way
+- Git repository is processed in a better way, example given above
     - now recording
         - Date and time of pushing to cloud
         - All remote URLs
