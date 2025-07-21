@@ -250,6 +250,8 @@ done
 # Function to scan directories and subdirectories for .git directories and record the latest commit hash
 scan_and_record_git_commit() {
     local dir="$1"
+    local header="============ git repository information ============"
+    header="${header//\//}" # Header cannot contain slashes, remove them
     # Check if the directory exists
     if [[ ! -d "$dir" ]]; then
         echo "Directory $dir does not exist, skip git repository scan."
@@ -308,7 +310,7 @@ scan_and_record_git_commit() {
                 local normalized_previous_records=""
                 if [[ -f "$git_info_file" ]]; then
                     normalized_previous_records=$(sed 's/\r$//' "$git_info_file")
-                    normalized_previous_records=$(echo "$normalized_previous_records" | tac | sed '/======/q' | tac)
+                    normalized_previous_records=$(echo "$normalized_previous_records" | tac | sed "/${header}/q" | tac)
                 fi
 
                 local current_entry=$(cat <<EOF
@@ -323,7 +325,7 @@ EOF
                     echo "Repository state for $subdir is already recorded. Skipping update."
                 else
                     # Write new git repository information by appending
-                    echo "============ git repository information ============" >>"$git_info_file"
+                    echo $header >>"$git_info_file"
                     echo "Date: $(date)" >>"$git_info_file"
                     echo -e "$current_entry" >>"$git_info_file"
 
