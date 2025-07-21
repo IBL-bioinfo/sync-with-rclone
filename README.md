@@ -30,5 +30,4 @@ It is a script that serves as a base of scripts for a target folder, for syncing
         - Current `git status` output
     - Pulling from cloud will not trigger this
     - Will not record if the repository has not been changed since the last push, comparing all except date and time
-        - (Now searching the whole file. Potential drawback here: if repository is reverted to a previous commit that has been recorded before, the record will still be skipped)
-    - The record file now appears side to side with the repository root directory, with the same name.
+    - The record file now appears side to side with the repository root directory, with the same name. It is not saved inside the git repository anymore.

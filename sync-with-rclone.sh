@@ -305,9 +305,10 @@ scan_and_record_git_commit() {
 
                 # Check if the current repository state is already recorded
                 # Normalize line endings in the git info file for comparison (convert CRLF to LF)
-                local normalized_file=""
+                local normalized_previous_records=""
                 if [[ -f "$git_info_file" ]]; then
-                    normalized_file=$(sed 's/\r$//' "$git_info_file")
+                    normalized_previous_records=$(sed 's/\r$//' "$git_info_file")
+                    normalized_previous_records=$(echo "$normalized_previous_records" | tac | sed '/======/q' | tac)
                 fi
 
                 local current_entry=$(cat <<EOF
@@ -318,7 +319,7 @@ Git Status:
 $git_status_line
 EOF
                 )
-                if [[ -n "$normalized_file" ]] && echo "$normalized_file" | grep -qF "$current_entry"; then
+                if [[ -n "$normalized_previous_records" ]] && echo "$normalized_previous_records" | grep -qF "$current_entry"; then
                     echo "Repository state for $subdir is already recorded. Skipping update."
                 else
                     # Write new git repository information by appending
