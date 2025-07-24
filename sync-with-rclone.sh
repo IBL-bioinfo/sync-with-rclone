@@ -310,7 +310,7 @@ scan_and_record_git_commit() {
                 local normalized_previous_records=""
                 if [[ -f "$git_info_file" ]]; then
                     normalized_previous_records=$(sed 's/\r$//' "$git_info_file")
-                    normalized_previous_records=$(echo "$normalized_previous_records" | tac | sed "/${header}/q" | tac)
+                    normalized_previous_records=$(echo "$normalized_previous_records" | tac | sed "/${header}/q" | tac | tr -d '[:space:]')
                 fi
 
                 local current_entry=$(cat <<EOF
@@ -321,11 +321,17 @@ Git Status:
 $git_status_line
 EOF
                 )
-                if [[ -n "$normalized_previous_records" ]] && echo "$normalized_previous_records" | grep -qF "$current_entry"; then
+
+                local current_entry_oneline=$(echo "$current_entry" | tr -d '[:space:]')
+                if [[ -n "$normalized_previous_records" ]] && echo "$normalized_previous_records" | grep -qF "$current_entry_oneline"; then
                     echo "Repository state for $subdir is already recorded. Skipping update."
+                    echo "Current:"
+                    echo $current_entry
+                    echo $normalized_previous_records
+
                 else
                     # Write new git repository information by appending
-                    echo $header >>"$git_info_file"
+                    echo "$header" >>"$git_info_file"
                     echo "Date: $(date)" >>"$git_info_file"
                     echo -e "$current_entry" >>"$git_info_file"
 
