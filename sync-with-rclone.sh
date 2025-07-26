@@ -31,7 +31,7 @@ fi
 readonly LOCAL_PATH="." # Local project path (current directory)
 # Exclude .git and python temporary files. This is a fixed list, I do not recommend to change.
 exclude+=(
-    "**/.git/" "**/__pycache__/"
+"**/.git/" "**/__pycache__/" "**/.mypy_cache/"
 )
 
 # Store script name as a relative path
