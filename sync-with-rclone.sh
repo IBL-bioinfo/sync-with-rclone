@@ -36,7 +36,7 @@ SCRIPT_NAME="$0"
 # Function to display usage
 usage() {
     echo "Usage: modify the variables in the script and run
-    $SCRIPT_NAME pull|push [--include <subdirectory>] [additional rclone parameters]"
+    $SCRIPT_NAME pull|push [additional rclone parameters]"
     cat <<EOF
 
 sync-with-rclone.sh
@@ -64,14 +64,9 @@ Options:
       Show this help message and exit.
   -y
       Skip confirmation prompts and run non-interactively (no user confirmation needed).
-  --include <subdirectory>
-      Temporary pull or push only the specified subdirectory. If the subdirectory
-      does not exist remotely, the script will prompt you to create it.
-      The first --include option sets the remote path; subsequent --include options
-      are passed directly to rclone.
   
   [additional rclone parameters]
-      Any extra parameters you want to pass to rclone (e.g., --dry-run, --exclude).
+      Any extra parameters you want to pass to rclone (e.g., --dry-run, --include, --exclude).
   
 Notes:
   1. The options --progress and --links are always included. On "pull," the script adds
@@ -80,7 +75,8 @@ Notes:
   
 Examples:
   $SCRIPT_NAME pull
-  $SCRIPT_NAME push --include src --dry-run
+  $SCRIPT_NAME push --dry-run
+  $SCRIPT_NAME push --include "src/**" --dry-run
 
 EOF
     exit 1
@@ -146,22 +142,6 @@ else
     exit 1
 fi
 
-# Deal with --include argument
-if [[ "$1" == "--include" ]]; then
-    if [[ -n "$2" ]]; then
-        include_path="$2"
-        remote_path_final="${REMOTE_PATH%/}/$include_path"
-        local_path_final="${LOCAL_PATH%/}/$include_path"
-        shift 2
-    else
-        echo "Error: --include requires a subdirectory argument."
-        exit 1
-    fi
-else
-    remote_path_final="$REMOTE_PATH"
-    local_path_final="$LOCAL_PATH"
-fi
-
 # Capture any additional rclone parameters
 EXTRA_PARAMS=("$@")
 
@@ -183,28 +163,9 @@ else
         echo "Error: Rclone remote '$REMOTE_NAME' does not exist."
         exit 1
     fi
-    if ! rclone lsjson "$REMOTE_NAME:$remote_path_final" &>/dev/null; then
-        # Separate the checks to avoid parse errors
-        if [[ -n "$include_path" ]] && rclone lsjson "$REMOTE_NAME:$REMOTE_PATH" &>/dev/null; then
-            echo "Warning: Specified subdirectory '$include_path' does not exist remotely."
-            if [[ "$NO_CONFIRM" == true ]]; then
-                confirm="y"
-            else
-                echo -n "Do you want to create it? (y/n) "
-                read confirm
-            fi
-            if [[ "$confirm" != "y" ]]; then
-                echo "Aborting operation."
-                exit 1
-            fi
-            rclone mkdir "$REMOTE_NAME:$remote_path_final" || {
-                echo "Failed to create remote directory"
-                exit 1
-            }
-        else
-            echo "Error: Remote directory $REMOTE_NAME:$REMOTE_PATH does not exist."
-            exit 1
-        fi
+    if ! rclone lsjson "$REMOTE_NAME:$REMOTE_PATH" &>/dev/null; then
+        echo "Error: Remote directory $REMOTE_NAME:$REMOTE_PATH does not exist."
+        exit 1
     fi
 fi
 
@@ -228,16 +189,16 @@ for ((i = 0; i < ${#EXTRA_PARAMS[@]}; i++)); do
 done
 
 if [[ "$SYNC_DIRECTION" == "pull" ]]; then
-    echo "Pull from ${REMOTE_NAME}:${remote_path_final} to ${local_path_final}"
-    src="${REMOTE_NAME}:${remote_path_final}"
-    dest="${local_path_final}"
+    echo "Pull from ${REMOTE_NAME}:${REMOTE_PATH} to ${LOCAL_PATH}"
+    src="${REMOTE_NAME}:${REMOTE_PATH}"
+    dest="${LOCAL_PATH}"
     # Add script and config file to exclude array for pull operations
     global_exclude+=("$(basename -- "$SCRIPT_NAME")")
     global_exclude+=("$(basename -- "$CONFIG_FILE")")
 elif [[ "$SYNC_DIRECTION" == "push" ]]; then
-    echo "Push from ${local_path_final} to ${REMOTE_NAME}:${remote_path_final}."
-    src="${local_path_final}"
-    dest="${REMOTE_NAME}:${remote_path_final}"
+    echo "Push from ${LOCAL_PATH} to ${REMOTE_NAME}:${REMOTE_PATH}"
+    src="${LOCAL_PATH}"
+    dest="${REMOTE_NAME}:${REMOTE_PATH}"
 else
     : # Do nothing, already checked above
 fi
@@ -431,10 +392,10 @@ EOF
 
 if [[ "$RECORD_GIT_COMMIT" == true && "$SYNC_DIRECTION" == "push" ]]; then
     echo "Searching git repositories..."
-    if scan_and_record_git_commit "$local_path_final"; then
+    if scan_and_record_git_commit "$LOCAL_PATH"; then
         echo "Git repositories found and recorded."
     else
-        echo "No git repositories found in '$local_path_final'"
+        echo "No git repositories found in '$LOCAL_PATH'"
     fi
 fi
 # Use array expansion to preserve quoted arguments
