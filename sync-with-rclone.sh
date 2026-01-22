@@ -138,11 +138,12 @@ elif [[ "$SYNC_DIRECTION" == "push" ]]; then
         exit 1
     fi
 else
-    echo "Error: SYNC_DIRECTION can only be 'pull' or 'push'."
+    echo "Error: SYNC_DIRECTION (first argument) can only be 'pull' or 'push'."
     exit 1
 fi
 
 # Capture any additional rclone parameters
+# Use array instead of $@ for easier manipulation
 EXTRA_PARAMS=("$@")
 
 # Ensure rclone is installed
