@@ -228,7 +228,7 @@ for ((i = 0; i < ${#EXTRA_PARAMS[@]}; i++)); do
 done
 
 if [[ "$SYNC_DIRECTION" == "pull" ]]; then
-    echo "Pull from ${REMOTE_NAME}:${remote_path_final} to ${local_path_final}."
+    echo "Pull from ${REMOTE_NAME}:${remote_path_final} to ${local_path_final}"
     src="${REMOTE_NAME}:${remote_path_final}"
     dest="${local_path_final}"
     # Add script and config file to exclude array for pull operations
