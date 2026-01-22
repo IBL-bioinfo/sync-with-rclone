@@ -238,6 +238,12 @@ EXTRA_PARAMS=("${filtered_extra_params[@]}")
 # 1. Global excludes from config, add script and config file for pull
 # 2. Includes/excludes from EXTRA_PARAMS (in order)
 # 3. Excludes from config
+#
+# RATIONALE: Global excludes are enforced FIRST to prevent accidental syncing of
+# system artifacts like .git/, __pycache__/, and editor temp files. This design
+# ensures that global excludes take precedence over any --include flags, protecting
+# critical system files even if the user explicitly tries to include them.
+# This is a deliberate security decision: some exclusions are non-negotiable.
 
 echo "# ---- global excludes ----" >"$FILTER"
 for pattern in "${global_exclude[@]}"; do
