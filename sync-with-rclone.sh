@@ -29,10 +29,6 @@ fi
 . "$CONFIG_FILE"
 
 readonly LOCAL_PATH="." # Local project path (current directory)
-# Exclude .git and python temporary files. This is a fixed list, I do not recommend to change.
-exclude+=(
-    "**/.git/" "**/__pycache__/"
-)
 
 # Store script name as a relative path
 SCRIPT_NAME="$0"
@@ -40,7 +36,7 @@ SCRIPT_NAME="$0"
 # Function to display usage
 usage() {
     echo "Usage: modify the variables in the script and run
-    $SCRIPT_NAME pull|push [--include <subdirectory>] [additional rclone parameters]"
+    $SCRIPT_NAME pull|push [additional rclone parameters]"
     cat <<EOF
 
 sync-with-rclone.sh
@@ -68,14 +64,9 @@ Options:
       Show this help message and exit.
   -y
       Skip confirmation prompts and run non-interactively (no user confirmation needed).
-  --include <subdirectory>
-      Temporary pull or push only the specified subdirectory. If the subdirectory
-      does not exist remotely, the script will prompt you to create it.
-      The first --include option sets the remote path; subsequent --include options
-      are passed directly to rclone.
   
   [additional rclone parameters]
-      Any extra parameters you want to pass to rclone (e.g., --dry-run, --exclude).
+      Any extra parameters you want to pass to rclone (e.g., --dry-run, --include, --exclude).
   
 Notes:
   1. The options --progress and --links are always included. On "pull," the script adds
@@ -84,7 +75,8 @@ Notes:
   
 Examples:
   $SCRIPT_NAME pull
-  $SCRIPT_NAME push --include src --dry-run
+  $SCRIPT_NAME push --dry-run
+  $SCRIPT_NAME push --include "src/**" --dry-run
 
 EOF
     exit 1
@@ -95,13 +87,16 @@ if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]; then
     usage
 fi
 
-# Parse -y argument for no confirmation
+# Parse -y and --dry-run arguments for no confirmation
 NO_CONFIRM=false
 NEW_ARGS=()
 for arg in "$@"; do
     if [[ "$arg" == "-y" ]]; then
         NO_CONFIRM=true
         continue
+    fi
+    if [[ "$arg" == "--dry-run" ]]; then
+        NO_CONFIRM=true
     fi
     NEW_ARGS+=("$arg")
     # skip empty args
@@ -143,27 +138,12 @@ elif [[ "$SYNC_DIRECTION" == "push" ]]; then
         exit 1
     fi
 else
-    echo "Error: SYNC_DIRECTION can only be 'pull' or 'push'."
+    echo "Error: SYNC_DIRECTION (first argument) can only be 'pull' or 'push'."
     exit 1
 fi
 
-# Deal with --include argument
-if [[ "$1" == "--include" ]]; then
-    if [[ -n "$2" ]]; then
-        include_path="$2"
-        remote_path_final="${REMOTE_PATH%/}/$include_path"
-        local_path_final="${LOCAL_PATH%/}/$include_path"
-        shift 2
-    else
-        echo "Error: --include requires a subdirectory argument."
-        exit 1
-    fi
-else
-    remote_path_final="$REMOTE_PATH"
-    local_path_final="$LOCAL_PATH"
-fi
-
 # Capture any additional rclone parameters
+# Use array instead of $@ for easier manipulation
 EXTRA_PARAMS=("$@")
 
 # Ensure rclone is installed
@@ -184,28 +164,9 @@ else
         echo "Error: Rclone remote '$REMOTE_NAME' does not exist."
         exit 1
     fi
-    if ! rclone lsjson "$REMOTE_NAME:$remote_path_final" &>/dev/null; then
-        # Separate the checks to avoid parse errors
-        if [[ -n "$include_path" ]] && rclone lsjson "$REMOTE_NAME:$REMOTE_PATH" &>/dev/null; then
-            echo "Warning: Specified subdirectory '$include_path' does not exist remotely."
-            if [[ "$NO_CONFIRM" == true ]]; then
-                confirm="y"
-            else
-                echo -n "Do you want to create it? (y/n) "
-                read confirm
-            fi
-            if [[ "$confirm" != "y" ]]; then
-                echo "Aborting operation."
-                exit 1
-            fi
-            rclone mkdir "$REMOTE_NAME:$remote_path_final" || {
-                echo "Failed to create remote directory"
-                exit 1
-            }
-        else
-            echo "Error: Remote directory $REMOTE_NAME:$REMOTE_PATH does not exist."
-            exit 1
-        fi
+    if ! rclone lsjson "$REMOTE_NAME:$REMOTE_PATH" &>/dev/null; then
+        echo "Error: Remote directory $REMOTE_NAME:$REMOTE_PATH does not exist."
+        exit 1
     fi
 fi
 
@@ -229,23 +190,113 @@ for ((i = 0; i < ${#EXTRA_PARAMS[@]}; i++)); do
 done
 
 if [[ "$SYNC_DIRECTION" == "pull" ]]; then
-    echo "Pull from ${REMOTE_NAME}:${remote_path_final} to ${local_path_final}."
-    src="${REMOTE_NAME}:${remote_path_final}"
-    dest="${local_path_final}"
-    rclone_paras+=("--exclude" "$(basename -- "$SCRIPT_NAME")")
-    rclone_paras+=("--exclude" "$(basename -- "$CONFIG_FILE")")
+    echo "Pull from ${REMOTE_NAME}:${REMOTE_PATH} to ${LOCAL_PATH}"
+    src="${REMOTE_NAME}:${REMOTE_PATH}"
+    dest="${LOCAL_PATH}"
+    # Add script and config file to exclude array for pull operations
+    global_exclude+=("$(basename -- "$SCRIPT_NAME")")
+    global_exclude+=("$(basename -- "$CONFIG_FILE")")
 elif [[ "$SYNC_DIRECTION" == "push" ]]; then
-    echo "Push from ${local_path_final} to ${REMOTE_NAME}:${remote_path_final}."
-    src="${local_path_final}"
-    dest="${REMOTE_NAME}:${remote_path_final}"
+    echo "Push from ${LOCAL_PATH} to ${REMOTE_NAME}:${REMOTE_PATH}"
+    src="${LOCAL_PATH}"
+    dest="${REMOTE_NAME}:${REMOTE_PATH}"
 else
     : # Do nothing, already checked above
 fi
 
-# Add exclude patterns from exclude array
-for pattern in "${exclude[@]}"; do
-    rclone_paras+=("--exclude" "$pattern")
+# Create temporary filter file for exclude patterns
+FILTER="$(mktemp)" || { echo "Error: Failed to create temporary filter file"; exit 1; }
+
+# Extract --include and --exclude arguments from EXTRA_PARAMS
+# These will be added to the filter file in order
+filter_params=()
+filtered_extra_params=()
+skip_next=false
+has_includes=false
+for param in "${EXTRA_PARAMS[@]}"; do
+    if [[ "$skip_next" == true ]]; then
+        filter_params+=("$param")
+        skip_next=false
+        continue
+    fi
+    if [[ "$param" == "--include" ]]; then
+        filter_params+=("include")
+        skip_next=true
+        has_includes=true
+        continue
+    fi
+    if [[ "$param" == "--exclude" ]]; then
+        filter_params+=("exclude")
+        skip_next=true
+        continue
+    fi
+    filtered_extra_params+=("$param")
 done
+
+# Validate that every --include/--exclude has a corresponding pattern
+if [[ "$skip_next" == true ]]; then
+    echo "Error: --include or --exclude requires a pattern argument"
+    exit 1
+fi
+EXTRA_PARAMS=("${filtered_extra_params[@]}")
+
+# Build filter file with structure:
+# 1. Global excludes from config, add script and config file for pull
+# 2. Includes/excludes from EXTRA_PARAMS (in order)
+# 3. Excludes from config
+#
+# RATIONALE: Global excludes are enforced FIRST to prevent accidental syncing of
+# system artifacts like .git/, __pycache__/, and editor temp files. This design
+# ensures that global excludes take precedence over any --include flags, protecting
+# critical system files even if the user explicitly tries to include them.
+# This is a deliberate security decision: some exclusions are non-negotiable.
+
+echo "# ---- global excludes ----" >"$FILTER"
+for pattern in "${global_exclude[@]}"; do
+    echo "- $pattern" >>"$FILTER"
+done
+
+# Add includes/excludes from command line in order
+if [[ ${#filter_params[@]} -gt 0 ]]; then
+    echo "" >>"$FILTER"
+    echo "# ---- includes/excludes from command line ----" >>"$FILTER"
+    i=0
+    while [[ $i -lt ${#filter_params[@]} ]]; do
+        type="${filter_params[$i]}"
+        ((i++))
+        pattern="${filter_params[$i]}"
+        ((i++))
+        if [[ "$type" == "include" ]]; then
+            echo "+ $pattern" >>"$FILTER"
+        else
+            echo "- $pattern" >>"$FILTER"
+        fi
+    done
+fi
+
+# Add specific excludes from config
+if [[ ${#exclude[@]} -gt 0 ]]; then
+    echo "" >>"$FILTER"
+    echo "# ---- excludes from config ----" >>"$FILTER"
+    for pattern in "${exclude[@]}"; do
+        echo "- $pattern" >>"$FILTER"
+    done
+fi
+
+# If includes are specified, add final catch-all to exclude everything else
+if [[ "$has_includes" == true ]]; then
+    echo "" >>"$FILTER"
+    echo "# ---- include detected: exclude everything else ----" >>"$FILTER"
+    echo "- **" >>"$FILTER"
+fi
+
+# Print filter content for verbosity
+echo "======== Filter file content: ========"
+cat "$FILTER"
+echo "======================================="
+
+# Add filter file to rclone parameters
+rclone_paras+=("--filter-from" "$FILTER")
 
 # Function to scan directories and subdirectories for .git directories and record the latest commit hash
 scan_and_record_git_commit() {
@@ -354,10 +405,10 @@ EOF
 
 if [[ "$RECORD_GIT_COMMIT" == true && "$SYNC_DIRECTION" == "push" ]]; then
     echo "Searching git repositories..."
-    if scan_and_record_git_commit "$local_path_final"; then
+    if scan_and_record_git_commit "$LOCAL_PATH"; then
         echo "Git repositories found and recorded."
     else
-        echo "No git repositories found in '$local_path_final'"
+        echo "No git repositories found in '$LOCAL_PATH'"
     fi
 fi
 # Use array expansion to preserve quoted arguments
@@ -383,3 +434,6 @@ else
     # Execute the command using array expansion
     "${cmd[@]}"
 fi
+
+# Clean up temporary filter file
+rm -f "$FILTER"
