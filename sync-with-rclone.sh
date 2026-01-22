@@ -29,10 +29,6 @@ fi
 . "$CONFIG_FILE"
 
 readonly LOCAL_PATH="." # Local project path (current directory)
-# Exclude .git and python temporary files. This is a fixed list, I do not recommend to change.
-exclude+=(
-    "**/.git/" "**/__pycache__/"
-)
 
 # Store script name as a relative path
 SCRIPT_NAME="$0"
@@ -232,8 +228,9 @@ if [[ "$SYNC_DIRECTION" == "pull" ]]; then
     echo "Pull from ${REMOTE_NAME}:${remote_path_final} to ${local_path_final}."
     src="${REMOTE_NAME}:${remote_path_final}"
     dest="${local_path_final}"
-    rclone_paras+=("--exclude" "$(basename -- "$SCRIPT_NAME")")
-    rclone_paras+=("--exclude" "$(basename -- "$CONFIG_FILE")")
+    # Add script and config file to exclude array for pull operations
+    global_exclude+=("$(basename -- "$SCRIPT_NAME")")
+    global_exclude+=("$(basename -- "$CONFIG_FILE")")
 elif [[ "$SYNC_DIRECTION" == "push" ]]; then
     echo "Push from ${local_path_final} to ${REMOTE_NAME}:${remote_path_final}."
     src="${local_path_final}"
@@ -242,10 +239,87 @@ else
     : # Do nothing, already checked above
 fi
 
-# Add exclude patterns from exclude array
-for pattern in "${exclude[@]}"; do
-    rclone_paras+=("--exclude" "$pattern")
+# Create temporary filter file for exclude patterns
+FILTER="$(mktemp)"
+
+# Extract --include and --exclude arguments from EXTRA_PARAMS
+# These will be added to the filter file in order
+filter_params=()
+filtered_extra_params=()
+skip_next=false
+has_includes=false
+for param in "${EXTRA_PARAMS[@]}"; do
+    if [[ "$skip_next" == true ]]; then
+        filter_params+=("$param")
+        skip_next=false
+        continue
+    fi
+    if [[ "$param" == "--include" ]]; then
+        filter_params+=("include")
+        skip_next=true
+        has_includes=true
+        continue
+    fi
+    if [[ "$param" == "--exclude" ]]; then
+        filter_params+=("exclude")
+        skip_next=true
+        continue
+    fi
+    filtered_extra_params+=("$param")
 done
+EXTRA_PARAMS=("${filtered_extra_params[@]}")
+
+# Build filter file with structure:
+# 1. Global excludes from config, add script and config file for pull
+# 2. Includes/excludes from EXTRA_PARAMS (in order)
+# 3. Excludes from config
+
+echo "# ---- global excludes ----" >"$FILTER"
+for pattern in "${global_exclude[@]}"; do
+    echo "- $pattern" >>"$FILTER"
+done
+
+# Add includes/excludes from command line in order
+if [[ ${#filter_params[@]} -gt 0 ]]; then
+    echo "" >>"$FILTER"
+    echo "# ---- includes/excludes from command line ----" >>"$FILTER"
+    i=0
+    while [[ $i -lt ${#filter_params[@]} ]]; do
+        type="${filter_params[$i]}"
+        ((i++))
+        pattern="${filter_params[$i]}"
+        ((i++))
+        if [[ "$type" == "include" ]]; then
+            echo "+ $pattern" >>"$FILTER"
+        else
+            echo "- $pattern" >>"$FILTER"
+        fi
+    done
+fi
+
+# Add specific excludes from config
+if [[ ${#exclude[@]} -gt 0 ]]; then
+    echo "" >>"$FILTER"
+    echo "# ---- excludes from config ----" >>"$FILTER"
+    for pattern in "${exclude[@]}"; do
+        echo "- $pattern" >>"$FILTER"
+    done
+fi
+
+# If includes are specified, add final catch-all to exclude everything else
+if [[ "$has_includes" == true ]]; then
+    echo "" >>"$FILTER"
+    echo "# ---- final catch ----" >>"$FILTER"
+    echo "- **" >>"$FILTER"
+fi
+
+# Print filter content for verbosity
+echo "Filter file content:"
+cat "$FILTER"
+echo
+
+# Add filter file to rclone parameters
+rclone_paras+=("--filter-from" "$FILTER")
 
 # Function to scan directories and subdirectories for .git directories and record the latest commit hash
 scan_and_record_git_commit() {
@@ -383,3 +457,6 @@ else
     # Execute the command using array expansion
     "${cmd[@]}"
 fi
+
+# Clean up temporary filter file
+rm -f "$FILTER"
