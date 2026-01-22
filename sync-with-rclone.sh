@@ -205,7 +205,7 @@ else
 fi
 
 # Create temporary filter file for exclude patterns
-FILTER="$(mktemp)"
+FILTER="$(mktemp)" || { echo "Error: Failed to create temporary filter file"; exit 1; }
 
 # Extract --include and --exclude arguments from EXTRA_PARAMS
 # These will be added to the filter file in order
@@ -232,6 +232,12 @@ for param in "${EXTRA_PARAMS[@]}"; do
     fi
     filtered_extra_params+=("$param")
 done
+
+# Validate that every --include/--exclude has a corresponding pattern
+if [[ "$skip_next" == true ]]; then
+    echo "Error: --include or --exclude requires a pattern argument"
+    exit 1
+fi
 EXTRA_PARAMS=("${filtered_extra_params[@]}")
 
 # Build filter file with structure:
