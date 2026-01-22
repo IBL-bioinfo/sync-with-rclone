@@ -274,7 +274,7 @@ fi
 # If includes are specified, add final catch-all to exclude everything else
 if [[ "$has_includes" == true ]]; then
     echo "" >>"$FILTER"
-    echo "# ---- final catch ----" >>"$FILTER"
+    echo "# ---- include detected: exclude everything else ----" >>"$FILTER"
     echo "- **" >>"$FILTER"
 fi
 
