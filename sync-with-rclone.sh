@@ -91,13 +91,16 @@ if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]; then
     usage
 fi
 
-# Parse -y argument for no confirmation
+# Parse -y and --dry-run arguments for no confirmation
 NO_CONFIRM=false
 NEW_ARGS=()
 for arg in "$@"; do
     if [[ "$arg" == "-y" ]]; then
         NO_CONFIRM=true
         continue
+    fi
+    if [[ "$arg" == "--dry-run" ]]; then
+        NO_CONFIRM=true
     fi
     NEW_ARGS+=("$arg")
     # skip empty args
@@ -314,9 +317,9 @@ if [[ "$has_includes" == true ]]; then
 fi
 
 # Print filter content for verbosity
-echo "Filter file content:"
+echo "======== Filter file content: ========"
 cat "$FILTER"
-echo
+echo "======================================="
 
 # Add filter file to rclone parameters
 rclone_paras+=("--filter-from" "$FILTER")
