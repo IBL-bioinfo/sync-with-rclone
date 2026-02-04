@@ -14,7 +14,7 @@
 #          this script will prompt user to sync them to a proper location. Syncing the small files in .git directories
 #          will be a heavy burden for cloud servers using WebDAV.
 # Author: Chao Du
-# Version: 2.3 (2025-07-19)
+# Version: 3.0 (2026-01-22)
 # Created: 2024-02-11
 # Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
@@ -40,7 +40,7 @@ usage() {
     cat <<EOF
 
 sync-with-rclone.sh
-Version: 2.3 (2025-07-19)
+Version: 3.0 (2026-01-22)
 Author: Chao Du
 Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
@@ -65,8 +65,18 @@ Options:
   -y
       Skip confirmation prompts and run non-interactively (no user confirmation needed).
   
+  --exclude [pattern]
+      Exclude files matching the given pattern. Can be specified multiple times.
+        Note: always add quoted patterns to avoid shell expansion.
+            For example: --exclude "data/**" --exclude "*.log"
+  --include [pattern]
+      Include files matching the given pattern. Can be specified multiple times.
+        Note: always add quoted patterns to avoid shell expansion.
+              For example: --include "data/**" --include "*.txt"
+        Note: If any --include is specified, all other files not explicitly included
+              will be excluded.
   [additional rclone parameters]
-      Any extra parameters you want to pass to rclone (e.g., --dry-run, --include, --exclude).
+      Any extra parameters you want to pass to rclone (e.g., --dry-run).
   
 Notes:
   1. The options --progress and --links are always included. On "pull," the script adds
