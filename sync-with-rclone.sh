@@ -436,7 +436,14 @@ printf "%q " "${cmd[@]}"
 echo
 
 # For sync operations, run a dry-run first to preview deletions and ask for confirmation
-if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" ]]; then
+has_dry_run=false
+for p in "${EXTRA_PARAMS[@]}"; do
+    if [[ "$p" == "--dry-run" ]]; then
+        has_dry_run=true
+        break
+    fi
+done
+if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" && "$has_dry_run" == false ]]; then
     echo ""
     echo "Checking for files that will be deleted (sync removes files in the destination not present in the source)..."
     dry_run_output=$("${cmd[@]}" "--dry-run" 2>&1)
