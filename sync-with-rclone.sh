@@ -14,7 +14,7 @@
 #          this script will prompt user to sync them to a proper location. Syncing the small files in .git directories
 #          will be a heavy burden for cloud servers using WebDAV.
 # Author: Chao Du
-# Version: 3.0 (2026-01-22)
+# Version: 4.0 (2026-03-10)
 # Created: 2024-02-11
 # Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
@@ -28,6 +28,13 @@ fi
 # shellcheck source=sync-with-rclone.config
 . "$CONFIG_FILE"
 
+# Default to "copy"; use --sync flag at runtime to switch to "sync" operation
+PREV_OPERATION="$OPERATION"
+OPERATION="copy"
+if [[ "$PREV_OPERATION" == "sync" ]]; then
+    echo "Warning: OPERATION=sync from config/environment is ignored. Use the --sync flag to enable sync mode." >&2
+fi
+
 readonly LOCAL_PATH="." # Local project path (current directory)
 
 # Store script name as a relative path
@@ -40,7 +47,7 @@ usage() {
     cat <<EOF
 
 sync-with-rclone.sh
-Version: 3.0 (2026-01-22)
+Version: 4.0 (2026-03-10)
 Author: Chao Du
 Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
@@ -64,6 +71,11 @@ Options:
       Show this help message and exit.
   -y
       Skip confirmation prompts and run non-interactively (no user confirmation needed).
+  --sync
+      Use rclone sync instead of the default copy operation.
+      WARNING: sync DELETES files in the destination that are absent from the source.
+      When used without -y or --dry-run, a preview of files to be deleted is shown
+      and a separate confirmation is required before proceeding.
   
   --exclude [pattern]
       Exclude files matching the given pattern. Can be specified multiple times.
@@ -108,6 +120,10 @@ for arg in "$@"; do
     if [[ "$arg" == "--dry-run" ]]; then
         NO_CONFIRM=true
     fi
+    if [[ "$arg" == "--sync" ]]; then
+        OPERATION="sync"
+        continue
+    fi
     NEW_ARGS+=("$arg")
     # skip empty args
 done
@@ -115,11 +131,6 @@ set -- "${NEW_ARGS[@]}"
 
 if [[ "$REMOTE_PATH" == "" ]]; then
     echo "Error: Please set the REMOTE_PATH variable in the script."
-    usage
-    exit 1
-fi
-if [[ "$OPERATION" == "" ]]; then
-    echo "Error: Please set the OPERATION variable in the script."
     usage
     exit 1
 fi
@@ -216,6 +227,10 @@ fi
 
 # Create temporary filter file for exclude patterns
 FILTER="$(mktemp)" || { echo "Error: Failed to create temporary filter file"; exit 1; }
+cleanup_filter() {
+    rm -f "$FILTER"
+}
+trap cleanup_filter EXIT INT TERM
 
 # Extract --include and --exclude arguments from EXTRA_PARAMS
 # These will be added to the filter file in order
@@ -428,6 +443,48 @@ echo "Final rclone command:"
 printf "%q " "${cmd[@]}"
 echo
 
+# For sync operations, run a dry-run first to preview deletions and ask for confirmation
+has_dry_run=false
+for p in "${EXTRA_PARAMS[@]}"; do
+    if [[ "$p" == "--dry-run" ]]; then
+        has_dry_run=true
+        break
+    fi
+done
+if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" && "$has_dry_run" == false ]]; then
+    echo ""
+    echo "Checking for files that will be deleted (sync removes files in the destination not present in the source)..."
+    dry_run_output=$("${cmd[@]}" "--dry-run" 2>&1)
+    dry_run_status=$?
+    if [[ $dry_run_status -ne 0 ]]; then
+        echo "Error: rclone dry-run failed. Output:"
+        echo "$dry_run_output"
+        exit 1
+    fi
+    deleted_lines=$(echo "$dry_run_output" | grep "Skipped delete as --dry-run is set")
+    if [[ -n "$deleted_lines" ]]; then
+        deleted_count=$(echo "$deleted_lines" | wc -l | tr -d ' ')
+        echo "======== WARNING: $deleted_count file(s) will be DELETED: ========="
+        echo "$deleted_lines" | sed "s|.*NOTICE: \(.*\): Skipped delete as --dry-run is set (size \(.*\))|  \1  (size \2)|g"
+        echo "================================================================="
+        if [[ "$NO_CONFIRM" == true ]]; then
+            echo "Waiting for 5 seconds before auto-confirming deletions..."
+            sleep 5
+            confirm_delete="y"
+        else
+            echo -n "These files will be permanently deleted. Confirm deletions? (y/n) "
+            read confirm_delete
+        fi
+        if [[ "$confirm_delete" != "y" ]]; then
+            echo "Aborting operation."
+            exit 1
+        fi
+    else
+        echo "No files will be deleted during this sync."
+    fi
+    echo ""
+fi
+
 if [[ "$NO_CONFIRM" == true ]]; then
     confirm="y"
 else
@@ -444,6 +501,3 @@ else
     # Execute the command using array expansion
     "${cmd[@]}"
 fi
-
-# Clean up temporary filter file
-rm -f "$FILTER"
