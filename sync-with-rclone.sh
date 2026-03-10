@@ -436,7 +436,7 @@ printf "%q " "${cmd[@]}"
 echo
 
 # For sync operations, run a dry-run first to preview deletions and ask for confirmation
-if [[ "$OPERATION" == "sync" && "$NO_CONFIRM" != true && "$REMOTE_PATH" != "__test" ]]; then
+if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" ]]; then
     echo ""
     echo "Checking for files that will be deleted (sync removes files in the destination not present in the source)..."
     dry_run_output=$("${cmd[@]}" "--dry-run" 2>&1)
@@ -446,10 +446,15 @@ if [[ "$OPERATION" == "sync" && "$NO_CONFIRM" != true && "$REMOTE_PATH" != "__te
         echo "======== WARNING: $deleted_count file(s) will be DELETED: ========="
         echo "$deleted_lines" | sed "s|.*NOTICE: \(.*\): Skipped delete as --dry-run is set (size \(.*\))|  \1  (size \2)|g"
         echo "================================================================="
-        echo -n "These files will be permanently deleted. Confirm deletions? (y/n) "
-        read confirm_delete
+        if [[ "$NO_CONFIRM" == true ]]; then
+            confirm_delete="y"
+        else
+            echo -n "These files will be permanently deleted. Confirm deletions? (y/n) "
+            read confirm_delete
+        fi
         if [[ "$confirm_delete" != "y" ]]; then
             echo "Aborting operation."
+            # Clean up temporary filter file
             rm -f "$FILTER"
             exit 1
         fi
