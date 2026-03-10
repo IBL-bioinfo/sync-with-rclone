@@ -447,6 +447,8 @@ if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" ]]; then
         echo "$deleted_lines" | sed "s|.*NOTICE: \(.*\): Skipped delete as --dry-run is set (size \(.*\))|  \1  (size \2)|g"
         echo "================================================================="
         if [[ "$NO_CONFIRM" == true ]]; then
+            echo "Waiting for 5 seconds before auto-confirming deletions..."
+            sleep 5
             confirm_delete="y"
         else
             echo -n "These files will be permanently deleted. Confirm deletions? (y/n) "
