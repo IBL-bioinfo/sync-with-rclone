@@ -29,7 +29,11 @@ fi
 . "$CONFIG_FILE"
 
 # Default to "copy"; use --sync flag at runtime to switch to "sync" operation
-OPERATION="${OPERATION:-copy}"
+PREV_OPERATION="$OPERATION"
+OPERATION="copy"
+if [[ "$PREV_OPERATION" == "sync" ]]; then
+    echo "Warning: OPERATION=sync from config/environment is ignored. Use the --sync flag to enable sync mode." >&2
+fi
 
 readonly LOCAL_PATH="." # Local project path (current directory)
 
@@ -223,6 +227,10 @@ fi
 
 # Create temporary filter file for exclude patterns
 FILTER="$(mktemp)" || { echo "Error: Failed to create temporary filter file"; exit 1; }
+cleanup_filter() {
+    rm -f "$FILTER"
+}
+trap cleanup_filter EXIT INT TERM
 
 # Extract --include and --exclude arguments from EXTRA_PARAMS
 # These will be added to the filter file in order
@@ -447,6 +455,12 @@ if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" && "$has_dry_run" == 
     echo ""
     echo "Checking for files that will be deleted (sync removes files in the destination not present in the source)..."
     dry_run_output=$("${cmd[@]}" "--dry-run" 2>&1)
+    dry_run_status=$?
+    if [[ $dry_run_status -ne 0 ]]; then
+        echo "Error: rclone dry-run failed. Output:"
+        echo "$dry_run_output"
+        exit 1
+    fi
     deleted_lines=$(echo "$dry_run_output" | grep "Skipped delete as --dry-run is set")
     if [[ -n "$deleted_lines" ]]; then
         deleted_count=$(echo "$deleted_lines" | wc -l | tr -d ' ')
@@ -463,8 +477,6 @@ if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" && "$has_dry_run" == 
         fi
         if [[ "$confirm_delete" != "y" ]]; then
             echo "Aborting operation."
-            # Clean up temporary filter file
-            rm -f "$FILTER"
             exit 1
         fi
     else
@@ -489,6 +501,3 @@ else
     # Execute the command using array expansion
     "${cmd[@]}"
 fi
-
-# Clean up temporary filter file
-rm -f "$FILTER"
