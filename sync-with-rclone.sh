@@ -439,10 +439,6 @@ fi
 # Use array expansion to preserve quoted arguments
 cmd+=("$src" "$dest" "${rclone_paras[@]}" "${EXTRA_PARAMS[@]}")
 
-echo "Final rclone command:"
-printf "%q " "${cmd[@]}"
-echo
-
 # For sync operations, run a dry-run first to preview deletions and ask for confirmation
 has_dry_run=false
 for p in "${EXTRA_PARAMS[@]}"; do
@@ -451,6 +447,21 @@ for p in "${EXTRA_PARAMS[@]}"; do
         break
     fi
 done
+
+# Remove --progress when dry-run is active: rclone would otherwise print the stats
+# twice — once as a live progress frame and again as the final NOTICE summary.
+if [[ "$has_dry_run" == true ]]; then
+    filtered_cmd=()
+    for p in "${cmd[@]}"; do
+        [[ "$p" != "--progress" ]] && filtered_cmd+=("$p")
+    done
+    cmd=("${filtered_cmd[@]}")
+fi
+
+echo "Final rclone command:"
+printf "%q " "${cmd[@]}"
+echo
+
 if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" && "$has_dry_run" == false ]]; then
     echo ""
     echo "Checking for files that will be deleted (sync removes files in the destination not present in the source)..."
