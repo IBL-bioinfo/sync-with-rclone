@@ -112,6 +112,7 @@ fi
 # Parse -y and --dry-run arguments for no confirmation
 NO_CONFIRM=false
 NEW_ARGS=()
+has_dry_run=false
 for arg in "$@"; do
     if [[ "$arg" == "-y" ]]; then
         NO_CONFIRM=true
@@ -119,6 +120,8 @@ for arg in "$@"; do
     fi
     if [[ "$arg" == "--dry-run" ]]; then
         NO_CONFIRM=true
+        has_dry_run=true
+        continue
     fi
     if [[ "$arg" == "--sync" ]]; then
         OPERATION="sync"
@@ -127,7 +130,7 @@ for arg in "$@"; do
     NEW_ARGS+=("$arg")
     # skip empty args
 done
-set -- "${NEW_ARGS[@]}"
+set -- "${NEW_ARGS[@]}" # Update positional parameters with filtered arguments
 
 if [[ "$REMOTE_PATH" == "" ]]; then
     echo "Error: Please set the REMOTE_PATH variable in the script."
@@ -135,11 +138,6 @@ if [[ "$REMOTE_PATH" == "" ]]; then
     exit 1
 fi
 
-valid_operations=("sync" "copy")
-if ! printf '%s\n' "${valid_operations[@]}" | grep -qx "$OPERATION"; then
-    echo "Error: OPERATION must be 'sync' or 'copy'."
-    exit 1
-fi
 if [[ ! -d "$LOCAL_PATH" ]]; then
     echo "Error: LOCAL_PATH '$LOCAL_PATH' is not a directory."
     exit 1
@@ -191,20 +189,37 @@ else
     fi
 fi
 
+if [[ "$SYNC_DIRECTION" == "pull" ]]; then
+    echo "Source -> Destination:"
+    echo "    $REMOTE_NAME:$REMOTE_PATH (remote) -> $LOCAL_PATH (local)"
+else
+    echo "Source -> Destination:"
+    echo "    $LOCAL_PATH (local) -> $REMOTE_NAME:$REMOTE_PATH (remote)"
+fi
+echo
+echo "Existing files in the destination will be updated if they differ from the source."
+if [[ $OPERATION == "sync" ]]; then
+    echo "WARNING: Sync mode is enabled:"
+    echo "    This will DELETE files in the destination that are absent from the source."
+else
+    echo "No files will be deleted."
+fi
+echo
+
 # Construct the rclone command
 cmd=("rclone" "$OPERATION")
-rclone_paras=("--progress" "--links" "--use-cookies" "--transfers" "4" "--timeout" "60m")
+rclone_paras=("--links" "--use-cookies" "--transfers" "4" "--timeout" "60m")
 # Check if EXTRA_PARAMS contains --transfers and --timeout, if so,
 # remove them from rclone_paras, they will be added later with EXTRA_PARAMS.
 for ((i = 0; i < ${#EXTRA_PARAMS[@]}; i++)); do
     case "${EXTRA_PARAMS[i]}" in
     # Check from back to front to avoid index issues
     --timeout)
-        rclone_paras=("${rclone_paras[@]:0:5}" "${rclone_paras[@]:7}")
+        rclone_paras=("${rclone_paras[@]:0:4}" "${rclone_paras[@]:6}")
         ((i++)) # Skip the next value as it is the associated value
         ;;
     --transfers)
-        rclone_paras=("${rclone_paras[@]:0:3}" "${rclone_paras[@]:5}")
+        rclone_paras=("${rclone_paras[@]:0:2}" "${rclone_paras[@]:4}")
         ((i++))
         ;;
     esac
@@ -323,6 +338,115 @@ echo "======================================="
 # Add filter file to rclone parameters
 rclone_paras+=("--filter-from" "$FILTER")
 
+list_changing_files_by_dry_run() {
+    local dry_run_cmd=("$@")
+    local -a filtered_params=()
+    # Make sure to remove any existing --progress and existing --dry-run from the command to avoid duplicate outputs and conflicts
+    for p in "${dry_run_cmd[@]}"; do
+        [[ "$p" != "--progress" && "$p" != "--dry-run" ]] && filtered_params+=("$p")
+    done
+    dry_run_cmd=("${filtered_params[@]}" "--dry-run")
+    local line
+    local after_notice path remainder action tail size
+    local rendered_line
+    local -a delete_items=()
+    local -a copy_items=()
+    local -a mtime_items=()
+    local -a other_items=()
+    local printed_count=0
+
+    # Extract changed files from dry-run output (lines starting with "NOTICE: ")
+    # on the fly, printing each of them in an easy-to-read format.
+    while IFS= read -r line; do
+        [[ "$line" != *" NOTICE: "* ]] && continue
+        [[ "$line" != *": Skipped "* ]] && continue
+        [[ "$line" != *" as --dry-run is set"* ]] && continue
+
+        after_notice="${line#* NOTICE: }"
+        path="${after_notice%%: Skipped *}"
+        remainder="${after_notice#"$path: Skipped "}"
+        action="${remainder%% as --dry-run is set*}"
+        tail="${remainder#"$action as --dry-run is set"}"
+
+        size=""
+        if [[ "$tail" =~ \(size[[:space:]]+([^\)]+)\) ]]; then
+            size="${BASH_REMATCH[1]}"
+        fi
+
+        case "$action" in
+        delete)
+            rendered_line="Delete file: $path"
+            [[ -n "$size" ]] && rendered_line+=" | $size"
+            delete_items+=("$path${size:+ | $size}")
+            ;;
+        copy)
+            rendered_line="Copy file: $path"
+            [[ -n "$size" ]] && rendered_line+=" | $size"
+            copy_items+=("$path${size:+ | $size}")
+            ;;
+        "set directory modification time"|"set modification time")
+            rendered_line="Modification time update: $path"
+            [[ -n "$size" ]] && rendered_line+=" | $size"
+            mtime_items+=("$path${size:+ | $size}")
+            ;;
+        *)
+            rendered_line="${action^}: $path"
+            [[ -n "$size" ]] && rendered_line+=" | $size"
+            other_items+=("${action^}: $path${size:+ | $size}")
+            ;;
+        esac
+
+        echo "$rendered_line"
+        ((printed_count++))
+    done < <("${dry_run_cmd[@]}" 2>&1)
+    local dry_run_status=$?
+
+    # If stdout is a terminal, clear per-file lines and show a compact grouped summary.
+    if [[ $printed_count -gt 0 && -t 1 ]]; then
+        for ((i = 0; i < printed_count; i++)); do
+            tput cuu1
+            tput el
+        done
+    fi
+
+    if [[ ${#delete_items[@]} -gt 0 ]]; then
+        if [[ "$SYNC_DIRECTION" == "pull" ]]; then
+            echo "Will DELETED from local:"
+        else
+            echo "Will DELETED from remote:"
+        fi
+        for item in "${delete_items[@]}"; do
+            echo "  $item"
+        done
+    fi
+    if [[ ${#copy_items[@]} -gt 0 ]]; then
+        if [[ "$SYNC_DIRECTION" == "pull" ]]; then
+            echo "Will DOWNLOAD from remote to local:"
+        else
+            echo "Will UPLOAD from local to remote:"
+        fi
+        for item in "${copy_items[@]}"; do
+            echo "  $item"
+        done
+    fi
+    if [[ ${#mtime_items[@]} -gt 0 ]]; then
+        echo "Will update modification time:"
+        for item in "${mtime_items[@]}"; do
+            echo "  $item"
+        done
+    fi
+    if [[ ${#other_items[@]} -gt 0 ]]; then
+        echo "Other changes to be done:"
+        for item in "${other_items[@]}"; do
+            echo "  $item"
+        done
+    fi
+
+    return $dry_run_status
+}
+
+
+
 # Function to scan directories and subdirectories for .git directories and record the latest commit hash
 scan_and_record_git_commit() {
     local dir="$1"
@@ -388,7 +512,6 @@ scan_and_record_git_commit() {
                     normalized_previous_records=$(sed 's/\r$//' "$git_info_file")
                     normalized_previous_records=$(echo "$normalized_previous_records" | tac | sed "/${header}/q" | tac | tr -d '[:space:]')
                 fi
-
                 local current_entry=$(cat <<EOF
 Commit Hash: $commit_hash
 Remote(s):
@@ -397,14 +520,13 @@ Git Status:
 $git_status_line
 EOF
                 )
-
                 local current_entry_oneline=$(echo "$current_entry" | tr -d '[:space:]')
                 if [[ -n "$normalized_previous_records" ]] && echo "$normalized_previous_records" | grep -qF "$current_entry_oneline"; then
                     echo "Repository state for $subdir is already recorded. Skipping update."
                     echo "Current:"
-                    echo $current_entry
-                    echo $normalized_previous_records
-
+                    echo "$current_entry"
+                    echo "Previous:"
+                    echo "$normalized_previous_records"
                 else
                     # Write new git repository information by appending
                     echo "$header" >>"$git_info_file"
@@ -436,68 +558,36 @@ if [[ "$RECORD_GIT_COMMIT" == true && "$SYNC_DIRECTION" == "push" ]]; then
         echo "No git repositories found in '$LOCAL_PATH'"
     fi
 fi
+
 # Use array expansion to preserve quoted arguments
 cmd+=("$src" "$dest" "${rclone_paras[@]}" "${EXTRA_PARAMS[@]}")
 
-# For sync operations, run a dry-run first to preview deletions and ask for confirmation
-has_dry_run=false
-for p in "${EXTRA_PARAMS[@]}"; do
-    if [[ "$p" == "--dry-run" ]]; then
-        has_dry_run=true
-        break
-    fi
-done
-
-# Remove --progress when dry-run is active: rclone would otherwise print the stats
-# twice — once as a live progress frame and again as the final NOTICE summary.
-if [[ "$has_dry_run" == true ]]; then
-    filtered_cmd=()
-    for p in "${cmd[@]}"; do
-        [[ "$p" != "--progress" ]] && filtered_cmd+=("$p")
-    done
-    cmd=("${filtered_cmd[@]}")
-fi
-
-echo "Final rclone command:"
-printf "%q " "${cmd[@]}"
+# Print out what will be changed by the operation using a dry-run
 echo
-
-if [[ "$OPERATION" == "sync" && "$REMOTE_PATH" != "__test" && "$has_dry_run" == false ]]; then
-    echo ""
-    echo "Checking for files that will be deleted (sync removes files in the destination not present in the source)..."
-    dry_run_output=$("${cmd[@]}" "--dry-run" 2>&1)
-    dry_run_status=$?
-    if [[ $dry_run_status -ne 0 ]]; then
-        echo "Error: rclone dry-run failed. Output:"
-        echo "$dry_run_output"
-        exit 1
-    fi
-    deleted_lines=$(echo "$dry_run_output" | grep "Skipped delete as --dry-run is set")
-    if [[ -n "$deleted_lines" ]]; then
-        deleted_count=$(echo "$deleted_lines" | wc -l | tr -d ' ')
-        echo "======== WARNING: $deleted_count file(s) will be DELETED: ========="
-        echo "$deleted_lines" | sed "s|.*NOTICE: \(.*\): Skipped delete as --dry-run is set (size \(.*\))|  \1  (size \2)|g"
-        echo "================================================================="
-        if [[ "$NO_CONFIRM" == true ]]; then
-            echo "Waiting for 5 seconds before auto-confirming deletions..."
-            sleep 5
-            confirm_delete="y"
-        else
-            echo -n "These files will be permanently deleted. Confirm deletions? (y/n) "
-            read confirm_delete
-        fi
-        if [[ "$confirm_delete" != "y" ]]; then
-            echo "Aborting operation."
-            exit 1
-        fi
-    else
-        echo "No files will be deleted during this sync."
-    fi
-    echo ""
+if [[ $has_dry_run == true ]]; then
+    echo "Dry-run mode enabled. The command will not be executed."
+    echo "Potential changes identified by rclone dry-run:"
+    echo
+    list_changing_files_by_dry_run "${cmd[@]}"
+    exit 0
+else
+    list_changing_files_by_dry_run "${cmd[@]}"
+    echo
+    cmd+=("--progress")
+    echo "Final rclone command:"
+    printf "%q " "${cmd[@]}"
+    echo
 fi
 
 if [[ "$NO_CONFIRM" == true ]]; then
     confirm="y"
+    if [[ $OPERATION == "copy" ]]; then
+        no_confirm_wait=5
+    else
+        no_confirm_wait=10
+    fi
+    echo "Waiting for $no_confirm_wait seconds before auto-confirming..."
+    sleep "$no_confirm_wait"
 else
     echo -n "Confirm? (y/n) "
     read confirm
