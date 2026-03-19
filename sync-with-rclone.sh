@@ -601,6 +601,20 @@ if [[ "$confirm" != "y" ]]; then
     echo "Aborting operation."
     exit 1
 fi
+
+# Extra safety confirmation for potentially destructive sync operations
+if [[ "$OPERATION" == "sync" && "$NO_CONFIRM" != true ]]; then
+    echo
+    echo "WARNING: You are about to run an rclone sync operation."
+    echo "This may DELETE files at the destination to match the source."
+    echo -n "Type 'delete' to confirm you understand deletions may occur (or anything else to abort): "
+    read delete_confirm
+    if [[ "$delete_confirm" != "delete" ]]; then
+        echo "Aborting sync operation due to missing deletion confirmation."
+        exit 1
+    fi
+fi
+
 if [[ "$REMOTE_PATH" == "__test" ]]; then
     echo "Warning: Test mode is enabled. The command will not be executed."
 else
