@@ -416,9 +416,9 @@ list_changing_files_by_dry_run() {
 
     if [[ ${#delete_items[@]} -gt 0 ]]; then
         if [[ "$SYNC_DIRECTION" == "pull" ]]; then
-            echo "Will DELETED from local:"
+            echo "Will DELETE from local:"
         else
-            echo "Will DELETED from remote:"
+            echo "Will DELETE from remote:"
         fi
         for item in "${delete_items[@]}"; do
             echo "  $item"
