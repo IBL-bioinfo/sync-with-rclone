@@ -354,6 +354,12 @@ list_changing_files_by_dry_run() {
     local -a mtime_items=()
     local -a other_items=()
     local printed_count=0
+    local dry_run_output
+    local dry_run_status
+
+    # Run the dry-run command once, capturing both its output and exit status.
+    dry_run_output="$("${dry_run_cmd[@]}" 2>&1)"
+    dry_run_status=$?
 
     # Extract changed files from dry-run output (lines starting with "NOTICE: ")
     # on the fly, printing each of them in an easy-to-read format.
@@ -398,8 +404,7 @@ list_changing_files_by_dry_run() {
 
         echo "$rendered_line"
         ((printed_count++))
-    done < <("${dry_run_cmd[@]}" 2>&1)
-    local dry_run_status=$?
+    done <<<"$dry_run_output"
 
     # If stdout is a terminal, clear per-file lines and show a compact grouped summary.
     if [[ $printed_count -gt 0 && -t 1 ]]; then
