@@ -2,7 +2,7 @@
 
 One command copy/sync between local and remote directories using rclone. Made for simplicity and efficiency by excluding unnecessary files.
 
-**Version:** 4.0 (2026-03-10)
+**Version:** 4.1 (2026-03-19)
 **Repository:** https://github.com/IBL-bioinfo/sync-with-rclone
 
 ## Quick Start
@@ -100,7 +100,19 @@ A  file-added.txt
  D file-deleted.txt
 ```
 
-## RECENT UPDATES (3.0 to 4.0)
+## RECENT UPDATES (3.0 to 4.1)
+
+Version 4.1 (2026-03-19): Cleaner Dry-Run No-Change Output
+
+This release improves clarity when a dry-run finds no file-level changes:
+
+1. CLEAR NO-CHANGE MESSAGE
+   - Added explicit output: "Nothing will change." when dry-run has no pending changes
+   - Avoids confusion caused by only seeing rclone summary/check counters
+
+2. EARLY EXIT WHEN NO CHANGES
+   - Real operation now stops before confirmation/execution if dry-run pre-check reports no changes
+   - Prevents unnecessary prompts and no-op runs
 
 Version 4.0 (2026-03-10): Improved Safety for Sync Operations
 
