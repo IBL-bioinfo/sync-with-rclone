@@ -14,7 +14,7 @@
 #          this script will prompt user to sync them to a proper location. Syncing the small files in .git directories
 #          will be a heavy burden for cloud servers using WebDAV.
 # Author: Chao Du
-# Version: 4.0 (2026-03-10)
+# Version: 4.1 (2026-03-19)
 # Created: 2024-02-11
 # Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
@@ -47,7 +47,7 @@ usage() {
     cat <<EOF
 
 sync-with-rclone.sh
-Version: 4.0 (2026-03-10)
+Version: 4.1 (2026-03-19)
 Author: Chao Du
 Repository: https://github.com/IBL-bioinfo/sync-with-rclone
 
