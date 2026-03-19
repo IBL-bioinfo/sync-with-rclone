@@ -226,14 +226,12 @@ for ((i = 0; i < ${#EXTRA_PARAMS[@]}; i++)); do
 done
 
 if [[ "$SYNC_DIRECTION" == "pull" ]]; then
-    echo "Pull from ${REMOTE_NAME}:${REMOTE_PATH} to ${LOCAL_PATH}"
     src="${REMOTE_NAME}:${REMOTE_PATH}"
     dest="${LOCAL_PATH}"
     # Add script and config file to exclude array for pull operations
     global_exclude+=("$(basename -- "$SCRIPT_NAME")")
     global_exclude+=("$(basename -- "$CONFIG_FILE")")
 elif [[ "$SYNC_DIRECTION" == "push" ]]; then
-    echo "Push from ${LOCAL_PATH} to ${REMOTE_NAME}:${REMOTE_PATH}"
     src="${LOCAL_PATH}"
     dest="${REMOTE_NAME}:${REMOTE_PATH}"
 else
