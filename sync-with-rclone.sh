@@ -336,6 +336,10 @@ echo "======================================="
 # Add filter file to rclone parameters
 rclone_paras+=("--filter-from" "$FILTER")
 
+# Set by list_changing_files_by_dry_run:
+# true if any file-level change is detected, false otherwise.
+DRY_RUN_HAS_CHANGES=false
+
 list_changing_files_by_dry_run() {
     local dry_run_cmd=("$@")
     local -a filtered_params=()
@@ -448,6 +452,10 @@ list_changing_files_by_dry_run() {
     # rclone dry-run summary can report checks only and no file-level changes.
     # In that case, surface a clear message instead of printing nothing.
     local total_changes=$(( ${#delete_items[@]} + ${#copy_items[@]} + ${#mtime_items[@]} + ${#other_items[@]} ))
+    DRY_RUN_HAS_CHANGES=false
+    if [[ $total_changes -gt 0 ]]; then
+        DRY_RUN_HAS_CHANGES=true
+    fi
     if [[ $dry_run_status -eq 0 && $total_changes -eq 0 ]]; then
         echo "Nothing will change."
     fi
@@ -589,6 +597,9 @@ else
         status=$?
         echo "Error: rclone dry-run (pre-check) failed. Aborting before executing real command." >&2
         exit "${status:-1}"
+    fi
+    if [[ "$DRY_RUN_HAS_CHANGES" != true ]]; then
+        exit 0
     fi
     echo
     cmd+=("--progress")
