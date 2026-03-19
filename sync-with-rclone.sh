@@ -573,10 +573,18 @@ if [[ $has_dry_run == true ]]; then
     echo "Dry-run mode enabled. The command will not be executed."
     echo "Potential changes identified by rclone dry-run:"
     echo
-    list_changing_files_by_dry_run "${cmd[@]}"
+    if ! list_changing_files_by_dry_run "${cmd[@]}"; then
+        status=$?
+        echo "Error: rclone dry-run failed. Aborting." >&2
+        exit "${status:-1}"
+    fi
     exit 0
 else
-    list_changing_files_by_dry_run "${cmd[@]}"
+    if ! list_changing_files_by_dry_run "${cmd[@]}"; then
+        status=$?
+        echo "Error: rclone dry-run (pre-check) failed. Aborting before executing real command." >&2
+        exit "${status:-1}"
+    fi
     echo
     cmd+=("--progress")
     echo "Final rclone command:"
