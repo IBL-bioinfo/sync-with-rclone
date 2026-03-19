@@ -445,6 +445,13 @@ list_changing_files_by_dry_run() {
         done
     fi
 
+    # rclone dry-run summary can report checks only and no file-level changes.
+    # In that case, surface a clear message instead of printing nothing.
+    local total_changes=$(( ${#delete_items[@]} + ${#copy_items[@]} + ${#mtime_items[@]} + ${#other_items[@]} ))
+    if [[ $dry_run_status -eq 0 && $total_changes -eq 0 ]]; then
+        echo "Nothing will change."
+    fi
+
     return $dry_run_status
 }
 
