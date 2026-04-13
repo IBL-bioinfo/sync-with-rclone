@@ -35,7 +35,7 @@ if [[ "$PREV_OPERATION" == "sync" ]]; then
     echo "Warning: OPERATION=sync from config/environment is ignored. Use the --sync flag to enable sync mode." >&2
 fi
 
-readonly LOCAL_PATH="." # Local project path (current directory)
+readonly LOCAL_PATH="$(pwd -P)" # Local project path (current directory, symlinks resolved)
 
 # Store script name as a relative path
 SCRIPT_NAME="$0"
